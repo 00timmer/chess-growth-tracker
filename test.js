@@ -147,6 +147,19 @@ eq('endDate 0 -> empty', C.endDate('2026-09-01',0), '');
 const tbEval=C.evaluate(tb);
 eq('bye tournament base = 3.0 -> $5', tbEval.base.money, 5);
 
+console.log('--- 6/6 prize is capped, lower tiers still bonus ---');
+const tp=C.newTournament('Perfect','2026-09-01',6);
+tp.rounds.forEach(r=>{r.result='W';r.proc={A:'met',B:'met',C:'met',D:'met',E:'met'}});
+const ep=C.evaluate(tp);
+eq('perfect process 20/20', ep.proc.total, 20);
+eq('6/6 stays $2000', ep.fin.money, 2000);
+eq('no bonus badge on 6/6', ep.fin.bonusPct, 0);
+const t55=C.newTournament('FiveHalf','2026-09-01',6);
+['W','W','W','W','W','D'].forEach((r,i)=>{t55.rounds[i].result=r;t55.rounds[i].proc={A:'met',B:'met',C:'met',D:'met',E:'met'}});
+const e55=C.evaluate(t55);
+eq('5.5/6 still bonuses to $180', e55.fin.money, 180);
+eq('bonus badge shown', e55.fin.bonusPct, 20);
+
 console.log('\n=== '+pass+' passed, '+fail+' failed ===');
 if(errs.length){console.log('JS ERRORS:'); errs.forEach(e=>console.log('  '+e));}
 process.exit(fail?1:0);

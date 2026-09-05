@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Chess Tournament Growth Tracker</title>
 <style>
@@ -526,7 +527,8 @@ function finalOutcome(base, proc){
   };
   if (!proc || proc.total === null) return out;
   const b = proc.band;
-  if (base.money > 0 && b.moneyMult !== 1){
+  // The perfect-score prize is a fixed headline number — the bonus does not stack on top of it.
+  if (base.money > 0 && b.moneyMult !== 1 && !base.super){
     out.bonusPct = Math.round((b.moneyMult - 1) * 100);
     out.money = Math.round(base.money * b.moneyMult);
   }
@@ -921,8 +923,7 @@ function renderSummaryTab(t){
   if (fin.isSuper){
     h += '<div class="reward super"><div class="lab">Perfect score</div>' +
       '<div class="val">' + money(fin.money) + '</div>' +
-      '<div class="note">🏆 ' + ts.pts + ' / ' + t.nRounds + ' — a clean sweep. This is the big one.' +
-      (fin.bonusPct ? '<br>Includes a +' + fin.bonusPct + '% process bonus.' : "") + '</div></div>';
+      '<div class="note">🏆 ' + ts.pts + ' / ' + t.nRounds + ' — a clean sweep. This is the big one.</div></div>';
   } else if (fin.kind === "money"){
     h += '<div class="reward good"><div class="lab">Final reward</div>' +
       '<div class="val">' + money(fin.money) + '</div>' +
