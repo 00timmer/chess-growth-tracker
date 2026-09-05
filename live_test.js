@@ -1,0 +1,172 @@
+const WebSocket=require('ws');
+const http=require('http');
+const get=u=>new Promise((res,rej)=>http.get(u,r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>res(JSON.parse(d)))}).on('error',rej));
+const URL_=process.argv[2];
+(async()=>{
+  const tabs=await get('http://127.0.0.1:9222/json');
+  const page=tabs.find(t=>t.type==='page');
+  const ws=new WebSocket(page.webSocketDebuggerUrl,{perMessageDeflate:false,maxPayload:1e8});
+  let id=0; const pend=new Map(); const consoleErrs=[];
+  const send=(m,p={})=>new Promise(r=>{const i=++id;pend.set(i,r);ws.send(JSON.stringify({id:i,method:m,params:p}))});
+  ws.on('message',d=>{const m=JSON.parse(d);
+    if(m.id&&pend.has(m.id)){pend.get(m.id)(m.result||m.error);pend.delete(m.id);}
+    if(m.method==='Runtime.exceptionThrown')consoleErrs.push(JSON.stringify(m.params.exceptionDetails.exception&&m.params.exceptionDetails.exception.description||m.params.exceptionDetails.text).slice(0,200));
+    if(m.method==='Runtime.consoleAPICalled'&&m.params.type==='error')consoleErrs.push((m.params.args[0]||{}).value);
+  });
+  await new Promise(r=>ws.on('open',r));
+  await send('Page.enable'); await send('Runtime.enable');
+  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:2,mobile:true});
+  const ev=async(expr)=>{const r=await send('Runtime.evaluate',{expression:`(()=>{try{return JSON.stringify(${expr})}catch(e){return JSON.stringify('THREW: '+e.message)}})()`,returnByValue:true,awaitPromise:true});
+    if(r.exceptionDetails)return 'EXCEPTION '+JSON.stringify(r.exceptionDetails).slice(0,200);
+    try{return JSON.parse(r.result.value)}catch(e){return r.result.value}};
+  const go=async(u)=>{await send('Page.navigate',{url:u});await new Promise(r=>setTimeout(r,2200));};
+
+  let pass=0,fail=0;
+  const t=(name,got,want)=>{const ok=JSON.stringify(got)===JSON.stringify(want);
+    if(ok){pass++;console.log('  ok   '+name);}else{fail++;console.log('  FAIL '+name+'\n         got  '+JSON.stringify(got)+'\n         want '+JSON.stringify(want));}};
+  const tt=(name,cond)=>t(name,!!cond,true);
+
+  await go(URL_+'?t='+Date.now());
+
+  console.log('\n[1] FIRST RUN');
+  tt('name sheet opens', await ev(`document.querySelector('#modal').classList.contains('on')`));
+  t('prompt copy', await ev(`document.querySelector('#sheet h3').textContent`), 'Who are we tracking?');
+  await ev(`(document.querySelector('#pnName').value='Evan', document.querySelector('#pnGo').click(), 1)`);
+  await new Promise(r=>setTimeout(r,300));
+  t('name saved', await ev(`window.CHESS._db().player`), 'Evan');
+  t('header personalised', await ev(`document.querySelector('#hTitle').textContent`), "Evan's Chess Growth Tracker");
+  tt('sheet closed', await ev(`!document.querySelector('#modal').classList.contains('on')`));
+
+  console.log('\n[2] CREATE TOURNAMENT (real clicks)');
+  await ev(`(document.querySelector('#newT').click(),1)`);
+  await new Promise(r=>setTimeout(r,250));
+  tt('create sheet open', await ev(`!!document.querySelector('#ntGo')`));
+  await ev(`(document.querySelector('#ntName').value='NY State Championship',document.querySelector('#ntDate').value='2026-09-05',document.querySelector('#ntRounds').value='6',document.querySelector('#ntGo').click(),1)`);
+  await new Promise(r=>setTimeout(r,350));
+  t('1 tournament', await ev(`window.CHESS._db().tournaments.length`), 1);
+  t('6 rounds', await ev(`window.CHESS._db().tournaments[0].rounds.length`), 6);
+  t('on tour view', await ev(`window.CHESS._ui().view`), 'tour');
+  t('header shows name', await ev(`document.querySelector('#hTitle').textContent`), 'NY State Championship');
+  t('6 round rows', await ev(`document.querySelectorAll('[data-r]').length`), 6);
+
+  console.log('\n[3] ROUND 1 ENTRY (clicks + typing)');
+  await ev(`(document.querySelectorAll('[data-r]')[0].click(),1)`);
+  await new Promise(r=>setTimeout(r,300));
+  t('round view', await ev(`window.CHESS._ui().view`), 'round');
+  await ev(`(document.querySelector('[data-res="W"]').click(),1)`); await new Promise(r=>setTimeout(r,200));
+  t('result W', await ev(`window.CHESS._db().tournaments[0].rounds[0].result`), 'W');
+  await ev(`(document.querySelector('[data-col="W"]').click(),1)`); await new Promise(r=>setTimeout(r,200));
+  t('colour W', await ev(`window.CHESS._db().tournaments[0].rounds[0].color`), 'W');
+  await ev(`(function(){var i=document.querySelector('#fOpp');i.value='Maya R.';i.oninput();var r=document.querySelector('#fRat');r.value='1180';r.oninput();var a=document.querySelector('#eAcc');a.value='88';a.oninput();var n=document.querySelector('#fNotes');n.value='Calm game.';n.oninput();return 1})()`);
+  await new Promise(r=>setTimeout(r,350));
+  t('opponent saved', await ev(`window.CHESS._db().tournaments[0].rounds[0].opponent`), 'Maya R.');
+  t('rating saved', await ev(`window.CHESS._db().tournaments[0].rounds[0].oppRating`), '1180');
+  t('engine acc saved', await ev(`window.CHESS._db().tournaments[0].rounds[0].engine.acc`), '88');
+  t('notes saved', await ev(`window.CHESS._db().tournaments[0].rounds[0].notes`), 'Calm game.');
+
+  console.log('\n[4] PROCESS MARKS + HELP TOGGLE');
+  await ev(`(document.querySelector('[data-help="A"]').click(),1)`); await new Promise(r=>setTimeout(r,150));
+  tt('help opens', await ev(`document.querySelector('#help-A').classList.contains('on')`));
+  await ev(`(document.querySelector('[data-help="A"]').click(),1)`); await new Promise(r=>setTimeout(r,150));
+  tt('help closes', await ev(`!document.querySelector('#help-A').classList.contains('on')`));
+  await ev(`(function(){['A','B','C','D','E'].forEach(function(k){document.querySelector('[data-cat="'+k+'"][data-mark="met"]').click()});return 1})()`);
+  await new Promise(r=>setTimeout(r,400));
+  t('5 marks set', await ev(`Object.keys(window.CHESS._db().tournaments[0].rounds[0].proc).length`), 5);
+  await ev(`(document.querySelector('[data-cat="D"][data-mark="star"]').click(),1)`); await new Promise(r=>setTimeout(r,300));
+  t('star overrides met', await ev(`window.CHESS._db().tournaments[0].rounds[0].proc.D`), 'star');
+  await ev(`(document.querySelector('[data-cat="D"][data-mark="star"]').click(),1)`); await new Promise(r=>setTimeout(r,300));
+  t('tap again clears', await ev(`window.CHESS._db().tournaments[0].rounds[0].proc.D`), undefined);
+  await ev(`(document.querySelector('[data-cat="D"][data-mark="star"]').click(),1)`); await new Promise(r=>setTimeout(r,300));
+
+  console.log('\n[5] BYE');
+  await ev(`(window.CHESS._go('round',{rIdx:1}),1)`); await new Promise(r=>setTimeout(r,300));
+  await ev(`(document.querySelector('[data-res="B"]').click(),1)`); await new Promise(r=>setTimeout(r,300));
+  t('bye recorded', await ev(`window.CHESS._db().tournaments[0].rounds[1].result`), 'B');
+  tt('bye hint shown', await ev(`document.body.innerText.indexOf('Half-point bye')>-1`));
+
+  console.log('\n[6] FILL REMAINING + SUMMARY');
+  await ev(`(function(){var t=window.CHESS._db().tournaments[0];
+    ['','','W','D','L','L'].forEach(function(r,i){if(r)t.rounds[i].result=r});
+    [2,3,4,5].forEach(function(i){t.rounds[i].proc={A:'met',B:'met',C:'partial',D:'met',E:'met'}});
+    window.CHESS._go('tour',{tab:'summary'});return 1})()`);
+  await new Promise(r=>setTimeout(r,500));
+  const sum = await ev(`({score:document.querySelector('.hero .big').textContent,
+    rec:document.querySelector('.hero .rec').textContent,
+    reward:document.querySelector('.reward .val').textContent,
+    total:(document.body.innerText.match(/(\\d+(\\.\\d+)?) \\/ 20/)||[])[0]})`);
+  console.log('    summary =', JSON.stringify(sum));
+  t('score 3.0 (2W 1D 2L + half-point bye)', sum.score, '3');
+  t('reward = $5 base +20% = $6', sum.reward, '$6');
+  tt('record pluralised correctly', /1 draw\b/.test(sum.rec) && /1 bye\b/.test(sum.rec));
+  tt('reward is a dollar figure', /^\$/.test(sum.reward));
+  tt('no provisional banner (all rounds filled)', await ev(`document.body.innerText.indexOf('Provisional')===-1`));
+
+  console.log('\n[7] PROCESS TAB + OVERRIDE');
+  await ev(`(document.querySelectorAll('.tabs button').forEach(function(b){if(b.dataset.tab==='process')b.click()}),1)`);
+  await new Promise(r=>setTimeout(r,400));
+  const sugg = await ev(`window.CHESS.processScore(window.CHESS._db().tournaments[0]).cats.C.suggested`);
+  await ev(`(document.querySelector('[data-cat="C"][data-score="1"]').click(),1)`);
+  await new Promise(r=>setTimeout(r,400));
+  t('override applied', await ev(`window.CHESS._db().tournaments[0].overrides.C.score`), 1);
+  tt('suggestion still visible', await ev(`document.body.innerText.indexOf('suggested '+${sugg})>-1`));
+  tt('override note sheet opened', await ev(`!!document.querySelector('#ovNote')`));
+  await ev(`(document.querySelector('#ovNote').value='rushed rounds 3-5',document.querySelector('#ovSave').click(),1)`);
+  await new Promise(r=>setTimeout(r,400));
+  t('note saved', await ev(`window.CHESS._db().tournaments[0].overrides.C.note`), 'rushed rounds 3-5');
+  tt('parent badge shown', await ev(`document.body.innerText.indexOf('set by parent')>-1`));
+  await ev(`(document.querySelector('#clearOv').click(),1)`); await new Promise(r=>setTimeout(r,400));
+  t('reset clears overrides', await ev(`Object.keys(window.CHESS._db().tournaments[0].overrides).length`), 0);
+
+  console.log('\n[8] PERSISTENCE ACROSS RELOAD');
+  await go(URL_);
+  t('tournament survived', await ev(`window.CHESS._db().tournaments.length`), 1);
+  t('name survived', await ev(`window.CHESS._db().player`), 'Evan');
+  t('round data survived', await ev(`window.CHESS._db().tournaments[0].rounds[0].opponent`), 'Maya R.');
+  tt('no name prompt on return', await ev(`!document.querySelector('#modal').classList.contains('on')`));
+
+  console.log('\n[9] NAV + TRENDS + MORE');
+  await ev(`(document.querySelector('[data-nav="trends"]').click(),1)`); await new Promise(r=>setTimeout(r,400));
+  t('trends view', await ev(`window.CHESS._ui().view`), 'trends');
+  tt('trends rendered', await ev(`document.querySelector('#trendsBody').innerHTML.length>200`));
+  tt('sparkline bars', await ev(`document.querySelectorAll('.spark i').length>0`));
+  await ev(`(document.querySelector('[data-nav="more"]').click(),1)`); await new Promise(r=>setTimeout(r,400));
+  t('more view', await ev(`window.CHESS._ui().view`), 'more');
+  t('reward table rows', await ev(`document.querySelectorAll('table.rt tr').length`), 13);
+  tt('shows tracked name', await ev(`document.body.innerText.indexOf('Evan')>-1`));
+  tt('super row highlighted', await ev(`!!document.querySelector('table.rt tr.hi')`));
+
+  console.log('\n[10] THEME TOGGLE');
+  await ev(`(document.querySelector('#themeBtn').click(),1)`); await new Promise(r=>setTimeout(r,300));
+  t('dark applied', await ev(`document.documentElement.getAttribute('data-theme')`), 'dark');
+  const darkBg = await ev(`getComputedStyle(document.body).backgroundColor`);
+  await ev(`(document.querySelector('#themeBtn').click(),1)`); await new Promise(r=>setTimeout(r,300));
+  const lightBg = await ev(`getComputedStyle(document.body).backgroundColor`);
+  tt('bg actually changes', darkBg !== lightBg);
+  console.log('    dark='+darkBg+'  light='+lightBg);
+
+  console.log('\n[11] IMPORT / EXPORT ROUNDTRIP');
+  const snap = await ev(`JSON.stringify(window.CHESS._db())`);
+  await ev(`(document.querySelector('#wipeBtn').click(),1)`); await new Promise(r=>setTimeout(r,250));
+  await ev(`(document.querySelector('#wYes').click(),1)`); await new Promise(r=>setTimeout(r,400));
+  t('erased', await ev(`window.CHESS._db().tournaments.length`), 0);
+  await ev(`(function(){var db=window.CHESS._db();var p=JSON.parse(${JSON.stringify(snap)});
+    p.tournaments.forEach(function(t){db.tournaments.push(window.CHESS.migrate(t))});return 1})()`);
+  await new Promise(r=>setTimeout(r,300));
+  t('restored from snapshot', await ev(`window.CHESS._db().tournaments.length`), 1);
+  t('restored round intact', await ev(`window.CHESS._db().tournaments[0].rounds[0].opponent`), 'Maya R.');
+
+  console.log('\n[12] LAYOUT + ERRORS');
+  for (const w of [320,390,430]){
+    await send('Emulation.setDeviceMetricsOverride',{width:w,height:844,deviceScaleFactor:2,mobile:true});
+    await ev(`(window.CHESS._go('round',{rIdx:0}),1)`); await new Promise(r=>setTimeout(r,350));
+    const ov = await ev(`(function(){var d=document.documentElement,o=[];
+      document.querySelectorAll('*').forEach(function(el){var r=el.getBoundingClientRect();
+        if(r.width>0&&r.right>d.clientWidth+1)o.push(el.className||el.tagName)});
+      return {w:d.clientWidth,h:d.scrollWidth>d.clientWidth+1,over:o.slice(0,5)}})()`);
+    t('no overflow @'+w, [ov.h,ov.over.length], [false,0]);
+  }
+  t('zero JS errors', consoleErrs.filter(Boolean), []);
+
+  console.log('\n=== '+pass+' passed, '+fail+' failed ===');
+  ws.close(); process.exit(fail?1:0);
+})().catch(e=>{console.error('ERR',e.message);process.exit(1)});
