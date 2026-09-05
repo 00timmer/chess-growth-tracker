@@ -1,6 +1,6 @@
 const fs=require('fs');
 (async()=>{ const {JSDOM}=require('jsdom');
-const html=fs.readFileSync('__dirname + '/index.html'','utf8');
+const html=fs.readFileSync(require('path').join(__dirname,'index.html'),'utf8');
 const errs=[];
 const dom=new JSDOM(html,{runScripts:"dangerously",url:"http://localhost/",pretendToBeVisual:true});
 dom.window.addEventListener('error',e=>errs.push('window.onerror: '+e.message));
