@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Chess Tournament Growth Tracker</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#f6f4ef; --card:#ffffff; --card2:#faf8f4;
+  --ink:#1f2430; --muted:#6b7280; --faint:#9aa1ad;
+  --line:#e6e1d8;
+  --accent:#2f6f4e; --accentSoft:#e8f2ec;
+  --gold:#b07d17; --goldSoft:#fdf3dd;
+  --star:#7c4dbe; --starSoft:#f1eafb;
+  --amber:#a86a12; --amberSoft:#fdf0dc;
+  --grey:#5d6672; --greySoft:#eef0f3;
+  --blue:#2563a8; --blueSoft:#e7f0fa;
+  --shadow:0 1px 2px rgba(31,36,48,.06),0 4px 14px rgba(31,36,48,.06);
+  --safeTop:env(safe-area-inset-top,0px);
+  --safeBottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="dark"]{
+  --bg:#12151b; --card:#1b1f27; --card2:#222732;
+  --ink:#e9ecf1; --muted:#a2abb8; --faint:#7b8492;
+  --line:#2c323d;
+  --accent:#6bc79a; --accentSoft:#1d3329;
+  --gold:#e0b45c; --goldSoft:#33290f;
+  --star:#b691ea; --starSoft:#2a2140;
+  --amber:#e0a95c; --amberSoft:#332614;
+  --grey:#9aa3b0; --greySoft:#262c36;
+  --blue:#7db3ea; --blueSoft:#17263a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 14px rgba(0,0,0,.25);
+}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+  background:var(--bg); color:var(--ink);
+  display:flex; flex-direction:column; min-height:100dvh;
+  overflow-x:hidden; -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- header ---------- */
+header{
+  position:sticky; top:0; z-index:60;
+  padding:calc(var(--safeTop) + 10px) 14px 10px;
+  background:var(--card); border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:10px;
+}
+header .back{
+  border:0; background:var(--card2); color:var(--ink); font-size:18px;
+  width:36px; height:36px; border-radius:10px; flex:0 0 auto; cursor:pointer;
+}
+header .htitle{flex:1; min-width:0}
+header h1{font-size:16px; font-weight:750; letter-spacing:-.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+header .hsub{font-size:11.5px; color:var(--muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+header .hbtns{display:flex; gap:6px; flex:0 0 auto}
+header .iconbtn{
+  border:1px solid var(--line); background:var(--card); color:var(--muted);
+  width:34px; height:34px; border-radius:10px; font-size:15px; cursor:pointer;
+}
+#buildTag{font-size:10px; color:var(--faint); font-weight:600}
+
+main{flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:14px 14px calc(var(--safeBottom) + 90px)}
+.view{display:none} .view.on{display:block; animation:fade .18s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- generic ---------- */
+.card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; box-shadow:var(--shadow); margin-bottom:12px}
+.card.tight{padding:12px}
+h2.sec{font-size:12px; letter-spacing:.9px; text-transform:uppercase; color:var(--faint); font-weight:700; margin:18px 4px 8px}
+h2.sec:first-child{margin-top:2px}
+.row{display:flex; align-items:center; gap:10px}
+.row.between{justify-content:space-between}
+.grow{flex:1; min-width:0}
+.muted{color:var(--muted)} .faint{color:var(--faint)}
+.small{font-size:12px} .xs{font-size:11px}
+.mt6{margin-top:6px}.mt10{margin-top:10px}.mt14{margin-top:14px}
+.hr{height:1px;background:var(--line);margin:12px 0}
+button{font-family:inherit}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid var(--line); background:var(--card); color:var(--ink);
+  padding:11px 14px; border-radius:12px; font-size:14px; font-weight:600; cursor:pointer;
+}
+.btn:active{transform:scale(.985)}
+.btn.pri{background:var(--accent); border-color:var(--accent); color:#fff}
+.btn.wide{width:100%}
+.btn.sm{padding:8px 11px; font-size:12.5px; border-radius:10px}
+.btn.danger{color:#b23b3b; border-color:#e9cfcf}
+input,select,textarea{
+  font-family:inherit; font-size:15px; color:var(--ink); background:var(--card2);
+  border:1px solid var(--line); border-radius:11px; padding:11px 12px; width:100%;
+}
+input:focus,select,textarea:focus{outline:2px solid var(--accentSoft); outline-offset:0}
+textarea{min-height:74px; resize:vertical}
+label.fl{display:block; font-size:11.5px; font-weight:650; color:var(--muted); margin:0 0 5px 2px; letter-spacing:.2px}
+.field{margin-bottom:11px}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+
+/* ---------- bottom nav ---------- */
+nav{
+  position:fixed; left:0; right:0; bottom:0; z-index:70;
+  background:var(--card); border-top:1px solid var(--line);
+  display:flex; padding:6px 4px calc(var(--safeBottom) + 6px);
+}
+nav button{
+  flex:1; border:0; background:none; cursor:pointer; color:var(--faint);
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+  font-size:10.5px; font-weight:650; padding:6px 2px; border-radius:12px;
+}
+nav button .ni{font-size:19px; line-height:1}
+nav button.on{color:var(--accent)}
+
+/* ---------- score hero ---------- */
+.hero{
+  background:linear-gradient(160deg,var(--accentSoft),var(--card) 70%);
+  border:1px solid var(--line); border-radius:18px; padding:16px; box-shadow:var(--shadow); margin-bottom:12px;
+}
+.hero .big{font-size:40px; font-weight:800; letter-spacing:-1.5px; line-height:1}
+.hero .of{font-size:17px; font-weight:600; color:var(--muted)}
+.hero .rec{font-size:12.5px; color:var(--muted); margin-top:5px}
+.provis{display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.4px;
+  background:var(--amberSoft); color:var(--amber); padding:3px 8px; border-radius:99px; margin-bottom:8px}
+
+/* ---------- round list ---------- */
+.rl{display:flex; align-items:center; gap:10px; padding:11px 12px; border:1px solid var(--line);
+  border-radius:14px; background:var(--card); margin-bottom:8px; cursor:pointer; box-shadow:var(--shadow)}
+.rl:active{background:var(--card2)}
+.rl .num{width:34px;height:34px;border-radius:10px;background:var(--card2); display:flex;align-items:center;
+  justify-content:center; font-weight:750; font-size:14px; color:var(--muted); flex:0 0 auto}
+.rl .opp{font-size:14px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.rl .meta{font-size:11.5px; color:var(--faint); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.res{font-size:11px; font-weight:800; padding:4px 8px; border-radius:8px; letter-spacing:.4px; flex:0 0 auto}
+.res.W{background:var(--accentSoft); color:var(--accent)}
+.res.D{background:var(--blueSoft); color:var(--blue)}
+.res.L{background:var(--greySoft); color:var(--grey)}
+.res.none{background:var(--card2); color:var(--faint)}
+.dots{display:flex; gap:3px; margin-top:5px}
+.dot{width:7px;height:7px;border-radius:99px;background:var(--line)}
+.dot.met{background:var(--accent)} .dot.partial{background:var(--amber)}
+.dot.not{background:var(--grey); opacity:.45} .dot.star{background:var(--star)}
+
+/* ---------- mark chips ---------- */
+.catblock{border:1px solid var(--line); border-radius:14px; padding:11px; margin-bottom:10px; background:var(--card)}
+.catblock .ctop{display:flex; align-items:center; gap:8px; margin-bottom:9px}
+.catkey{width:22px;height:22px;border-radius:7px;background:var(--card2);color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex:0 0 auto}
+.catname{font-size:13.5px; font-weight:700; flex:1}
+.helpbtn{border:0;background:var(--card2);color:var(--muted);width:22px;height:22px;border-radius:7px;
+  font-size:11px;font-weight:800;cursor:pointer;flex:0 0 auto}
+.help{display:none; font-size:12px; color:var(--muted); line-height:1.5; background:var(--card2);
+  border-radius:10px; padding:9px 10px; margin-bottom:9px}
+.help.on{display:block}
+.help li{margin-left:15px; margin-top:2px}
+.marks{display:grid; grid-template-columns:repeat(4,1fr); gap:6px}
+.mk{
+  border:1.5px solid var(--line); background:var(--card); border-radius:12px;
+  padding:9px 2px 8px; cursor:pointer; text-align:center; color:var(--muted);
+  display:flex; flex-direction:column; align-items:center; gap:2px; min-height:56px; justify-content:center;
+}
+.mk .sym{font-size:16px; line-height:1; font-weight:800}
+.mk .lbl{font-size:9.5px; font-weight:700; letter-spacing:.1px}
+.mk.on.met{background:var(--accentSoft); border-color:var(--accent); color:var(--accent)}
+.mk.on.partial{background:var(--amberSoft); border-color:var(--amber); color:var(--amber)}
+.mk.on.not{background:var(--greySoft); border-color:var(--grey); color:var(--grey)}
+.mk.on.star{background:var(--starSoft); border-color:var(--star); color:var(--star)}
+
+/* ---------- category score rows ---------- */
+.catrow{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line)}
+.catrow:last-child{border-bottom:0}
+.catrow .cn{flex:1; font-size:13.5px; font-weight:620}
+.catrow .sub{font-size:11px; color:var(--faint); margin-top:2px}
+.bar{height:6px; background:var(--line); border-radius:99px; overflow:hidden; margin-top:6px; width:100%}
+.bar i{display:block; height:100%; background:var(--accent); border-radius:99px}
+.scorepick{display:flex; gap:4px; flex:0 0 auto}
+.sp{width:28px;height:28px;border-radius:8px;border:1.5px solid var(--line); background:var(--card);
+  font-size:12px; font-weight:750; color:var(--muted); cursor:pointer}
+.sp.on{background:var(--accent); border-color:var(--accent); color:#fff}
+.sp.sugg{border-color:var(--accent); color:var(--accent)}
+.badge{font-size:10px;font-weight:750;padding:3px 7px;border-radius:99px;background:var(--card2);color:var(--muted)}
+.badge.ov{background:var(--blueSoft); color:var(--blue)}
+
+/* ---------- reward blocks ---------- */
+.reward{border-radius:16px; padding:15px; text-align:center; border:1px solid var(--line); margin-bottom:12px}
+.reward .lab{font-size:11px; font-weight:750; letter-spacing:.9px; text-transform:uppercase; opacity:.8}
+.reward .val{font-size:34px; font-weight:800; letter-spacing:-1px; margin-top:4px; line-height:1.1}
+.reward .note{font-size:12.5px; margin-top:6px; line-height:1.45}
+.reward.good{background:var(--accentSoft); color:var(--accent); border-color:transparent}
+.reward.neutral{background:var(--card2); color:var(--muted)}
+.reward.hold{background:var(--greySoft); color:var(--grey); border-color:transparent}
+.reward.waived{background:var(--accentSoft); color:var(--accent); border-color:transparent}
+.reward.super{background:linear-gradient(150deg,#fff5d6,#ffe9a8); color:#8a5d00; border-color:transparent;
+  box-shadow:0 6px 26px rgba(200,150,20,.28)}
+.reward.super .val{font-size:40px}
+.strike{text-decoration:line-through; opacity:.55; font-size:17px; font-weight:700}
+
+.pill{display:inline-block; font-size:11.5px; font-weight:700; padding:5px 11px; border-radius:99px}
+.pill.p18{background:var(--accentSoft);color:var(--accent)}
+.pill.p15{background:var(--accentSoft);color:var(--accent)}
+.pill.p12{background:var(--blueSoft);color:var(--blue)}
+.pill.p9{background:var(--amberSoft);color:var(--amber)}
+.pill.p0{background:var(--greySoft);color:var(--grey)}
+
+ul.pts{list-style:none; margin-top:8px}
+ul.pts li{position:relative; padding-left:22px; font-size:13.5px; line-height:1.5; margin-bottom:7px}
+ul.pts li::before{position:absolute; left:0; top:0; font-weight:800}
+ul.pts.win li::before{content:'✓'; color:var(--accent)}
+ul.pts.next li::before{content:'→'; color:var(--blue)}
+ul.pts.star li::before{content:'★'; color:var(--star)}
+
+/* ---------- history ---------- */
+.hrow{display:flex; align-items:center; gap:10px; padding:12px; border:1px solid var(--line);
+  border-radius:14px; background:var(--card); margin-bottom:9px; cursor:pointer; box-shadow:var(--shadow)}
+.hrow .hn{font-size:14px; font-weight:680}
+.hrow .hd{font-size:11.5px; color:var(--faint); margin-top:2px}
+.hstat{text-align:right; flex:0 0 auto}
+.hstat .a{font-size:14px; font-weight:750}
+.hstat .b{font-size:11px; color:var(--muted); margin-top:2px}
+.empty{text-align:center; padding:34px 16px; color:var(--muted)}
+.empty .e1{font-size:40px; margin-bottom:10px}
+
+/* ---------- trends ---------- */
+.trend{margin-bottom:14px}
+.trend .tn{font-size:13px; font-weight:680; margin-bottom:6px; display:flex; justify-content:space-between}
+.spark{display:flex; align-items:flex-end; gap:4px; height:52px; padding:0 1px}
+.spark i{flex:1; background:var(--accentSoft); border-radius:4px 4px 2px 2px; position:relative; min-height:3px}
+.spark i.last{background:var(--accent)}
+.tlbl{display:flex; gap:4px; margin-top:4px}
+.tlbl span{flex:1; font-size:9px; color:var(--faint); text-align:center; overflow:hidden; white-space:nowrap}
+
+/* ---------- toast ---------- */
+#toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(var(--safeBottom) + 76px);
+  background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px;
+  border-radius:99px; z-index:200; opacity:0; pointer-events:none; transition:opacity .2s; max-width:90vw; text-align:center}
+#toast.on{opacity:.96}
+
+/* ---------- modal ---------- */
+.modal{position:fixed; inset:0; background:rgba(20,22,28,.5); z-index:150; display:none;
+  align-items:flex-end; justify-content:center; padding:0}
+.modal.on{display:flex}
+.sheet{background:var(--card); width:100%; max-width:560px; border-radius:20px 20px 0 0; padding:18px 16px calc(var(--safeBottom) + 18px); max-height:88vh; overflow-y:auto}
+.sheet h3{font-size:17px; font-weight:750; margin-bottom:12px}
+
+.tabs{display:flex; gap:6px; background:var(--card2); padding:4px; border-radius:13px; margin-bottom:14px}
+.tabs button{flex:1; border:0; background:none; padding:9px 4px; border-radius:10px; font-size:13px;
+  font-weight:680; color:var(--muted); cursor:pointer}
+.tabs button.on{background:var(--card); color:var(--ink); box-shadow:var(--shadow)}
+
+.kv{display:flex; justify-content:space-between; font-size:13px; padding:7px 0; border-bottom:1px solid var(--line)}
+.kv:last-child{border-bottom:0}
+.kv .k{color:var(--muted)}
+.kv .v{font-weight:650}
+
+.tblwrap{overflow-x:auto; -webkit-overflow-scrolling:touch}
+table.rt{width:100%; border-collapse:collapse; font-size:12.5px}
+table.rt td{padding:6px 8px; border-bottom:1px solid var(--line)}
+table.rt tr:last-child td{border-bottom:0}
+table.rt td.s{font-weight:750; width:52px}
+table.rt tr.hi td{background:var(--goldSoft); color:var(--gold); font-weight:700}
+table.rt tr.cur td{background:var(--accentSoft); color:var(--accent); font-weight:700}
+
+.marks.m4{grid-template-columns:repeat(4,1fr)}
+.marks.m2{grid-template-columns:repeat(2,1fr)}
+.res.B{background:var(--amberSoft); color:var(--amber)}
+
+/* media overrides LAST */
+@media (max-width:360px){
+  .marks,.marks.m4{grid-template-columns:repeat(2,1fr)}
+  .hero .big{font-size:34px}
+  .reward .val{font-size:29px}
+}
+@media (min-width:700px){
+  main{padding-left:calc(50vw - 340px); padding-right:calc(50vw - 340px)}
+  header{padding-left:calc(50vw - 340px); padding-right:calc(50vw - 340px)}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <button class="back" id="backBtn" style="display:none" aria-label="Back">‹</button>
+  <div class="htitle">
+    <h1 id="hTitle">Chess Growth Tracker</h1>
+    <div class="hsub" id="hSub">Results matter — habits matter more</div>
+  </div>
+  <div class="hbtns">
+    <span id="buildTag">v1.0</span>
+    <button class="iconbtn" id="themeBtn" title="Theme">◐</button>
+  </div>
+</header>
+
+<main>
+  <!-- ===================== HOME ===================== -->
+  <section class="view on" id="v-home">
+    <div id="homeBody"></div>
+  </section>
+
+  <!-- ===================== TOURNAMENT ===================== -->
+  <section class="view" id="v-tour">
+    <div class="tabs">
+      <button data-tab="rounds" class="on">Rounds</button>
+      <button data-tab="process">Process</button>
+      <button data-tab="summary">Summary</button>
+    </div>
+    <div id="tourBody"></div>
+  </section>
+
+  <!-- ===================== ROUND ===================== -->
+  <section class="view" id="v-round">
+    <div id="roundBody"></div>
+  </section>
+
+  <!-- ===================== TRENDS ===================== -->
+  <section class="view" id="v-trends">
+    <div id="trendsBody"></div>
+  </section>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <section class="view" id="v-more">
+    <div id="moreBody"></div>
+  </section>
+</main>
+
+<nav>
+  <button data-nav="home" class="on"><span class="ni">♟</span>Tournaments</button>
+  <button data-nav="trends"><span class="ni">📈</span>Progress</button>
+  <button data-nav="more"><span class="ni">⚙</span>More</button>
+</nav>
+
+<div id="toast"></div>
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   Chess Tournament Growth Tracker — single file, no backend, no AI.
+   The player's name is entered on first run and stored locally; it is never in this file.
+   Philosophy: results matter, but controllable behaviours matter more.
+   ========================================================================== */
+
+const BUILD = "v1.0";
+
+/* ---------------- categories ---------------- */
+const CATS = [
+  { key:"A", name:"Notation & Time Recording", short:"Notation",
+    help:["Was notation recorded clearly and reasonably completely?",
+          "Was clock / time information written down when it mattered?",
+          "If something was missing, did he try to recover it?"],
+    win:"Clear, complete notation",
+    next:"Write every move down, and note the clock at the key moments" },
+  { key:"B", name:"Thinking Discipline", short:"Thinking",
+    help:["Did he generally think before moving, and avoid instant moves?",
+          "Did he slow down in critical positions?",
+          "Did he check opponent threats and candidate moves before committing?",
+          "Judge the thinking, not the engine number — a hard-fought loss can score higher than a careless win."],
+    win:"Thought carefully before moving",
+    next:"Before each move, ask: what is my opponent threatening?" },
+  { key:"C", name:"Time Management", short:"Time",
+    help:["Did he use the clock he had, instead of racing?",
+          "Did he spend more time on the important decisions?",
+          "Did he avoid creating preventable time pressure?"],
+    win:"Used the clock well",
+    next:"Spend the time on the critical moments, not the easy ones" },
+  { key:"D", name:"Responsibility / Recovery", short:"Responsibility",
+    help:["Did he take responsibility for his game?",
+          "Did he preserve or reconstruct the game when needed?",
+          "Could he explain what he was thinking, and talk about it?",
+          "Did he stay constructive after a loss?"],
+    win:"Took responsibility and reviewed his games",
+    next:"Save the game right after the round and talk through one moment" },
+  { key:"E", name:"Game Quality / Decisions", short:"Game Quality",
+    help:["Parent / coach review plus engine info, read in context.",
+          "Opponent strength and position complexity count.",
+          "75 accuracy vs a strong opponent in a sharp position can be excellent.",
+          "90 accuracy with one avoidable blunder may not be."],
+    win:"Made good decisions at the board",
+    next:"Review the one move that changed the game" },
+];
+const CAT_KEYS = CATS.map(c => c.key);
+
+/* ---------------- marks ---------------- */
+const MARKS = {
+  met:     { sym:"✓", label:"Met",       credit:1.0  },
+  partial: { sym:"△", label:"Partly",    credit:0.5  },
+  not:     { sym:"✗", label:"Not yet",   credit:0.0  },
+  star:    { sym:"★", label:"Recovered", credit:1.25 },
+};
+const MARK_ORDER = ["met","partial","not","star"];
+
+/* ---------------- reward table (6-round basis) ---------------- */
+const REWARD_TABLE = [
+  { pts:6.0, money:2000, days:0, super:true },
+  { pts:5.5, money:150,  days:0 },
+  { pts:5.0, money:75,   days:0 },
+  { pts:4.5, money:40,   days:0 },
+  { pts:4.0, money:20,   days:0 },
+  { pts:3.5, money:10,   days:0 },
+  { pts:3.0, money:5,    days:0 },
+  { pts:2.5, money:0,    days:0 },
+  { pts:2.0, money:0,    days:7  },
+  { pts:1.5, money:0,    days:14 },
+  { pts:1.0, money:0,    days:30 },
+  { pts:0.5, money:0,    days:42 },
+  { pts:0.0, money:0,    days:60 },
+];
+
+const PROCESS_BANDS = [
+  { min:18, label:"Excellent tournament process", cls:"p18", moneyMult:1.20, consequence:"waive",
+    blurb:"Outstanding habits — this is exactly the effort we're looking for." },
+  { min:15, label:"Strong process", cls:"p15", moneyMult:1.10, consequence:"half",
+    blurb:"Strong tournament habits, with a little room to sharpen." },
+  { min:12, label:"Developing / acceptable", cls:"p12", moneyMult:1.00, consequence:"normal",
+    blurb:"Solid foundation. Pick one habit to push forward next time." },
+  { min:9,  label:"Needs improvement", cls:"p9", moneyMult:1.00, consequence:"normal",
+    blurb:"The habits below are the fastest way to improve results." },
+  { min:0,  label:"Significant improvement needed", cls:"p0", moneyMult:1.00, consequence:"normal",
+    blurb:"Let's rebuild the basics one round at a time — start with the focus areas below." },
+];
+
+/* ==========================================================================
+   Pure scoring engine (also exposed on window for testing)
+   ========================================================================== */
+
+/** Tournament points from the round results. "B" = half-point bye (not played). */
+function tournamentScore(rounds){
+  let pts = 0, w = 0, d = 0, l = 0, b = 0, played = 0;
+  for (const r of rounds){
+    if (r.result === "W"){ pts += 1;   w++; played++; }
+    else if (r.result === "D"){ pts += 0.5; d++; played++; }
+    else if (r.result === "L"){ l++; played++; }
+    else if (r.result === "B"){ pts += 0.5; b++; }
+  }
+  return { pts, w, d, l, b, played };
+}
+
+/** "1 draw" not "1 draws". */
+function plural(n, one, many){ return n + " " + (n === 1 ? one : (many || one + "s")); }
+
+/** Human record line, hiding the parts that are zero. */
+function recordLine(ts){
+  const bits = [plural(ts.w,"win"), plural(ts.d,"draw"), plural(ts.l,"loss","losses")];
+  if (ts.b) bits.push(plural(ts.b,"bye"));
+  return bits.join(" · ");
+}
+
+/** When a "no games" period would end, counted from the last day of the tournament. */
+function endDate(startISO, days){
+  if (!days) return "";
+  const d = new Date((startISO || todayISO()) + "T12:00:00");
+  if (isNaN(d)) return "";
+  d.setDate(d.getDate() + days);
+  return d.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
+}
+
+/** Look up the base reward/consequence, converting to a 6-round equivalent. */
+function baseOutcome(pts, nRounds){
+  const eq = nRounds === 6 ? pts : (nRounds > 0 ? pts / nRounds * 6 : 0);
+  const snapped = Math.max(0, Math.min(6, Math.round(eq * 2) / 2));
+  const hit = REWARD_TABLE.find(r => r.pts === snapped) || REWARD_TABLE[REWARD_TABLE.length - 1];
+  return Object.assign({}, hit, { equivalent: snapped, scaled: nRounds !== 6 });
+}
+
+/**
+ * Suggested 0-4 for one category, from that category's round marks.
+ * Credits: ✓ 1.0 · ★ 1.25 · △ 0.5 · ✗ 0. Unmarked rounds are excluded.
+ * Credits are scaled to a 6-round basis, then banded to match the spec:
+ *   5-6 met -> 4 · 4 met -> 3 · 2-3 met -> 2 · 1 met -> 1 · 0 -> 0
+ */
+function suggestScore(marks){
+  const used = marks.filter(m => m && MARKS[m]);
+  if (!used.length) return { score:null, credit:0, evaluated:0, equivalent:0 };
+  const credit = used.reduce((s, m) => s + MARKS[m].credit, 0);
+  const equivalent = Math.min(6, credit / used.length * 6);
+  let score;
+  if (equivalent >= 4.75) score = 4;
+  else if (equivalent >= 3.5) score = 3;
+  else if (equivalent >= 1.75) score = 2;
+  else if (equivalent >= 0.5) score = 1;
+  else score = 0;
+  return { score, credit, evaluated: used.length, equivalent };
+}
+
+/** Per-category suggested + final (override-aware) scores, and the /20 total. */
+function processScore(t){
+  const cats = {};
+  let sum = 0, scored = 0;
+  for (const c of CATS){
+    const marks = t.rounds.map(r => (r.proc || {})[c.key] || "");
+    const sug = suggestScore(marks);
+    const ov = (t.overrides || {})[c.key];
+    const hasOv = ov && ov.score !== null && ov.score !== undefined && ov.score !== "";
+    const final = hasOv ? Number(ov.score) : sug.score;
+    cats[c.key] = {
+      key:c.key, suggested:sug.score, evaluated:sug.evaluated, equivalent:sug.equivalent,
+      final, overridden: !!hasOv, note: hasOv ? (ov.note || "") : "",
+      stars: marks.filter(m => m === "star").length,
+    };
+    if (final !== null && final !== undefined){ sum += final; scored++; }
+  }
+  const total = scored ? Math.round(sum / (scored * 4) * 20 * 10) / 10 : null;
+  const band = total === null ? null : PROCESS_BANDS.find(b => total >= b.min);
+  return { cats, raw:sum, scoredCats:scored, total, prorated: scored > 0 && scored < CATS.length, band };
+}
+
+/** Humanise a consequence length. */
+function humanDays(d){
+  if (d <= 0) return "";
+  if (d === 60) return "2 months";
+  if (d === 42) return "6 weeks";
+  if (d === 30) return "1 month";
+  if (d % 7 === 0){ const w = d / 7; return w === 1 ? "1 week" : w + " weeks"; }
+  if (d >= 28){ const m = Math.round(d / 30); return m <= 1 ? "1 month" : m + " months"; }
+  return d === 1 ? "1 day" : d + " days";
+}
+
+/** Combine base result outcome with the process modifier. */
+function finalOutcome(base, proc){
+  const out = {
+    kind: base.days > 0 ? "hold" : (base.money > 0 ? "money" : "neutral"),
+    baseMoney: base.money, baseDays: base.days, isSuper: !!base.super,
+    money: base.money, days: base.days,
+    bonusPct: 0, waived:false, halved:false,
+    band: proc && proc.band ? proc.band : null,
+  };
+  if (!proc || proc.total === null) return out;
+  const b = proc.band;
+  if (base.money > 0 && b.moneyMult !== 1){
+    out.bonusPct = Math.round((b.moneyMult - 1) * 100);
+    out.money = Math.round(base.money * b.moneyMult);
+  }
+  if (base.days > 0){
+    if (b.consequence === "waive"){ out.days = 0; out.waived = true; out.kind = "waived"; }
+    else if (b.consequence === "half"){ out.days = Math.max(1, Math.round(base.days / 2)); out.halved = true; }
+  }
+  return out;
+}
+
+/** Rule-based highlights: what went well, what to work on (1-3 each). */
+function highlights(t, proc){
+  const wins = [], next = [], stars = [];
+  for (const c of CATS){
+    const info = proc.cats[c.key];
+    if (info.final === null || info.final === undefined) continue;
+    if (info.final >= 3) wins.push({ txt:c.win, s:info.final });
+    if (info.final <= 2) next.push({ txt:c.next, s:info.final });
+  }
+  wins.sort((a,b) => b.s - a.s);
+  next.sort((a,b) => a.s - b.s);
+  t.rounds.forEach(r => {
+    for (const c of CATS){
+      if ((r.proc || {})[c.key] === "star"){
+        stars.push("Round " + r.n + ": took the initiative on " + c.short.toLowerCase() +
+                   " instead of leaving it broken");
+      }
+    }
+  });
+  // Effort deserves a line even when every category is mid.
+  if (!wins.length && proc.total !== null && proc.total >= 9)
+    wins.push({ txt:"Kept working through the whole tournament", s:3 });
+  return { wins: wins.slice(0,3).map(x => x.txt), next: next.slice(0,3).map(x => x.txt), stars: stars.slice(0,3) };
+}
+
+/** Everything the summary screen needs. */
+function evaluate(t){
+  const ts = tournamentScore(t.rounds);
+  const base = baseOutcome(ts.pts, t.nRounds);
+  const proc = processScore(t);
+  const fin = finalOutcome(base, proc);
+  const hl = highlights(t, proc);
+  const complete = t.rounds.every(r => r.result);
+  return { ts, base, proc, fin, hl, complete };
+}
+
+/* ==========================================================================
+   Storage
+   ========================================================================== */
+const KEY = "chessTracker.v1";
+let DB = { version:1, player:"", tournaments:[] };
+
+/** The player's name lives only in this browser — never in the shipped file. */
+function who(){ return (DB.player || "").trim(); }
+function whoOr(fallback){ return who() || (fallback || "your player"); }
+function whos(){ const n = who(); return n ? (/s$/i.test(n) ? n + "'" : n + "'s") : "Your player's"; }
+let UI = { view:"home", tab:"rounds", tId:null, rIdx:0 };
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function todayISO(){ const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+
+function load(){
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw){ const p = JSON.parse(raw); if (p && Array.isArray(p.tournaments)) DB = p; }
+  } catch(e){ console.warn("load failed", e); }
+}
+let saveTimer = null;
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(KEY, JSON.stringify(DB)); }
+    catch(e){ toast("Couldn't save — storage may be full"); }
+  }, 200);
+}
+
+function newRound(n){
+  return { n, opponent:"", oppRating:"", color:"", result:"",
+           engine:{ acc:"", blunders:"", mistakes:"", inacc:"" },
+           proc:{}, notes:"" };
+}
+function newTournament(name, date, nRounds){
+  const n = Math.max(1, Math.min(15, Number(nRounds) || 6));
+  return { id:uid(), name:name || "Tournament", date:date || todayISO(), nRounds:n,
+           rounds:Array.from({length:n}, (_, i) => newRound(i+1)),
+           overrides:{}, createdAt:Date.now(), updatedAt:Date.now() };
+}
+function getT(){ return DB.tournaments.find(t => t.id === UI.tId) || null; }
+function touch(t){ t.updatedAt = Date.now(); save(); }
+
+/* ==========================================================================
+   Tiny helpers
+   ========================================================================== */
+const $ = s => document.querySelector(s);
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+  ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+function fmtDate(iso){
+  if (!iso) return "";
+  const d = new Date(iso + "T12:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString(undefined, { month:"short", day:"numeric", year:"numeric" });
+}
+function fmtMonth(iso){
+  if (!iso) return "";
+  const d = new Date(iso + "T12:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString(undefined, { month:"short", year:"numeric" });
+}
+function money(n){ return "$" + Number(n).toLocaleString(); }
+let toastTimer = null;
+function toast(msg){
+  const el = $("#toast"); el.textContent = msg; el.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("on"), 1900);
+}
+function openSheet(html){ $("#sheet").innerHTML = html; $("#modal").classList.add("on"); }
+function closeSheet(){ $("#modal").classList.remove("on"); }
+$("#modal").addEventListener("click", e => { if (e.target.id === "modal") closeSheet(); });
+
+/* ==========================================================================
+   Routing
+   ========================================================================== */
+function go(view, opts){
+  Object.assign(UI, opts || {});
+  UI.view = view;
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("on"));
+  $("#v-" + view).classList.add("on");
+  document.querySelectorAll("nav button").forEach(b =>
+    b.classList.toggle("on", b.dataset.nav === view));
+  $("#backBtn").style.display = (view === "tour" || view === "round") ? "" : "none";
+  $("main").scrollTop = 0;
+  render();
+}
+document.querySelectorAll("nav button").forEach(b =>
+  b.onclick = () => go(b.dataset.nav));
+$("#backBtn").onclick = () => {
+  if (UI.view === "round") go("tour");
+  else go("home");
+};
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  UI.tab = b.dataset.tab;
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+  renderTour();
+});
+
+/* ==========================================================================
+   Render — header
+   ========================================================================== */
+function renderHeader(){
+  const t = getT();
+  if (UI.view === "tour" && t){
+    $("#hTitle").textContent = t.name;
+    $("#hSub").textContent = fmtDate(t.date) + " · " + t.nRounds + " rounds";
+  } else if (UI.view === "round" && t){
+    const r = t.rounds[UI.rIdx];
+    $("#hTitle").textContent = "Round " + (r ? r.n : "");
+    $("#hSub").textContent = t.name;
+  } else if (UI.view === "trends"){
+    $("#hTitle").textContent = "Progress";
+    $("#hSub").textContent = "How the habits are trending";
+  } else if (UI.view === "more"){
+    $("#hTitle").textContent = "More";
+    $("#hSub").textContent = "Data, rules, and how scoring works";
+  } else {
+    $("#hTitle").textContent = who() ? whos() + " Chess Growth Tracker" : "Chess Growth Tracker";
+    $("#hSub").textContent = "Results matter — habits matter more";
+  }
+}
+
+function render(){
+  renderHeader();
+  if (UI.view === "home") renderHome();
+  else if (UI.view === "tour") renderTour();
+  else if (UI.view === "round") renderRound();
+  else if (UI.view === "trends") renderTrends();
+  else if (UI.view === "more") renderMore();
+}
+
+/* ==========================================================================
+   Home
+   ========================================================================== */
+function renderHome(){
+  const ts = DB.tournaments.slice().sort((a,b) => (b.date || "").localeCompare(a.date || "") || b.createdAt - a.createdAt);
+  let h = "";
+  h += '<button class="btn pri wide" id="newT">+ New tournament</button>';
+
+  const active = ts.find(t => !t.rounds.every(r => r.result));
+  if (active){
+    const e = evaluate(active);
+    const done = active.rounds.filter(r => r.result).length;
+    h += '<h2 class="sec">In progress</h2>';
+    h += '<div class="card" data-open="' + active.id + '" style="cursor:pointer">' +
+      '<div class="row between"><div class="grow">' +
+        '<div style="font-size:15px;font-weight:700">' + esc(active.name) + '</div>' +
+        '<div class="xs faint mt6">' + fmtDate(active.date) + ' · round ' + Math.min(done+1, active.nRounds) + ' of ' + active.nRounds + '</div>' +
+      '</div><div class="hstat"><div class="a">' + e.ts.pts + ' / ' + active.nRounds + '</div>' +
+      '<div class="b">' + (e.proc.total === null ? "no process yet" : e.proc.total + " / 20") + '</div></div></div>' +
+      '<div class="dots mt10">' + active.rounds.map(r =>
+        '<div class="dot ' + (r.result === "W" ? "met" : r.result === "D" ? "partial" : r.result === "L" ? "not" : "") + '"></div>').join("") +
+      '</div></div>';
+  }
+
+  const past = ts.filter(t => !active || t.id !== active.id);
+  h += '<h2 class="sec">History</h2>';
+  if (!past.length && !active){
+    h += '<div class="empty"><div class="e1">♞</div>' +
+      '<div style="font-weight:650;margin-bottom:6px">No tournaments yet</div>' +
+      '<div class="small">Start one before the first round — you can fill in each round as it finishes.</div>' +
+      '<button class="btn sm mt14" id="seedBtn">Load a sample tournament</button></div>';
+  } else if (!past.length){
+    h += '<div class="empty small">Finished tournaments will appear here.</div>';
+  } else {
+    for (const t of past){
+      const e = evaluate(t);
+      h += '<div class="hrow" data-open="' + t.id + '">' +
+        '<div class="grow"><div class="hn">' + esc(t.name) + '</div>' +
+        '<div class="hd">' + fmtMonth(t.date) + ' · ' + e.ts.w + 'W ' + e.ts.d + 'D ' + e.ts.l + 'L' + (e.ts.b ? ' ' + e.ts.b + 'bye' : '') + '</div></div>' +
+        '<div class="hstat"><div class="a">' + e.ts.pts + ' / ' + t.nRounds + '</div>' +
+        '<div class="b">Process ' + (e.proc.total === null ? "—" : e.proc.total + "/20") + '</div></div></div>';
+    }
+  }
+  $("#homeBody").innerHTML = h;
+
+  $("#newT").onclick = askNewTournament;
+  const sb = $("#seedBtn"); if (sb) sb.onclick = loadSample;
+  document.querySelectorAll("[data-open]").forEach(el =>
+    el.onclick = () => go("tour", { tId: el.dataset.open, tab:"rounds" }));
+}
+
+function askNewTournament(){
+  openSheet(
+    '<h3>New tournament</h3>' +
+    '<div class="field"><label class="fl">Tournament name</label>' +
+      '<input id="ntName" placeholder="e.g. NY State Championship"></div>' +
+    '<div class="grid2"><div class="field"><label class="fl">Date</label>' +
+      '<input id="ntDate" type="date" value="' + todayISO() + '"></div>' +
+      '<div class="field"><label class="fl">Rounds</label>' +
+      '<input id="ntRounds" type="number" min="1" max="15" value="6" inputmode="numeric"></div></div>' +
+    '<div class="xs faint" style="margin:2px 2px 12px">The reward table is built for 6 rounds. Other lengths are ' +
+      'converted to a 6-round equivalent before looking up the reward.</div>' +
+    '<button class="btn pri wide" id="ntGo">Create</button>'
+  );
+  setTimeout(() => { const i = $("#ntName"); if (i) i.focus(); }, 60);
+  $("#ntGo").onclick = () => {
+    const t = newTournament($("#ntName").value.trim(), $("#ntDate").value, $("#ntRounds").value);
+    DB.tournaments.push(t); save(); closeSheet();
+    go("tour", { tId:t.id, tab:"rounds" });
+  };
+}
+
+/* ==========================================================================
+   Tournament view
+   ========================================================================== */
+function renderTour(){
+  const t = getT();
+  if (!t){ go("home"); return; }
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x.dataset.tab === UI.tab));
+  if (UI.tab === "rounds") renderRoundsTab(t);
+  else if (UI.tab === "process") renderProcessTab(t);
+  else renderSummaryTab(t);
+}
+
+function renderRoundsTab(t){
+  const e = evaluate(t);
+  let h = "";
+  h += '<div class="hero">' +
+    (e.complete ? "" : '<div class="provis">In progress · ' + e.ts.played + ' of ' + t.nRounds + ' rounds</div>') +
+    '<div><span class="big">' + e.ts.pts + '</span><span class="of"> / ' + t.nRounds + '</span></div>' +
+    '<div class="rec">' + recordLine(e.ts) + '</div>' +
+    '</div>';
+
+  for (let i = 0; i < t.rounds.length; i++){
+    const r = t.rounds[i];
+    const marks = CAT_KEYS.map(k => (r.proc || {})[k] || "");
+    const opp = r.opponent ? esc(r.opponent) : '<span class="faint">Tap to add</span>';
+    const bits = [];
+    if (r.oppRating) bits.push(esc(r.oppRating));
+    if (r.color) bits.push(r.color === "W" ? "White" : "Black");
+    if (r.engine && r.engine.acc !== "" && r.engine.acc != null) bits.push(r.engine.acc + "% acc");
+    h += '<div class="rl" data-r="' + i + '">' +
+      '<div class="num">' + r.n + '</div>' +
+      '<div class="grow"><div class="opp">' + opp + '</div>' +
+        '<div class="meta">' + (bits.join(" · ") || "—") + '</div>' +
+        '<div class="dots">' + marks.map(m => '<div class="dot ' + (m || "") + '"></div>').join("") + '</div>' +
+      '</div>' +
+      '<div class="res ' + (r.result || "none") + '">' + (r.result || "—") + '</div>' +
+      '</div>';
+  }
+  h += '<div class="xs faint" style="text-align:center;margin-top:10px">' +
+       'Dots = the five process categories for that round.</div>';
+  $("#tourBody").innerHTML = h;
+  document.querySelectorAll("[data-r]").forEach(el =>
+    el.onclick = () => go("round", { rIdx: Number(el.dataset.r) }));
+}
+
+/* ---------------- process tab ---------------- */
+function renderProcessTab(t){
+  const e = evaluate(t);
+  const p = e.proc;
+  let h = "";
+
+  h += '<div class="card">' +
+    '<div class="row between"><div><div class="xs faint" style="letter-spacing:.8px;font-weight:700">TOTAL PROCESS SCORE</div>' +
+    '<div style="font-size:34px;font-weight:800;letter-spacing:-1px;line-height:1.1;margin-top:2px">' +
+      (p.total === null ? "—" : p.total) + '<span class="of" style="font-size:17px;color:var(--muted)"> / 20</span></div></div>' +
+    (p.band ? '<span class="pill ' + p.band.cls + '">' + p.band.label + '</span>' : "") +
+    '</div>' +
+    (p.band ? '<div class="small muted mt10">' + p.band.blurb + '</div>' : '<div class="small muted mt10">Mark the rounds and a score will be suggested here.</div>') +
+    (p.prorated ? '<div class="xs faint mt10">Based on ' + p.scoredCats + ' of 5 categories — scaled to 20.</div>' : "") +
+    '</div>';
+
+  h += '<h2 class="sec">Categories</h2><div class="card">';
+  for (const c of CATS){
+    const info = p.cats[c.key];
+    const pct = info.final == null ? 0 : info.final / 4 * 100;
+    h += '<div class="catrow"><div class="grow">' +
+      '<div class="cn">' + c.name + (info.stars ? ' <span style="color:var(--star)">★</span>' : "") + '</div>' +
+      '<div class="sub">' + (info.evaluated
+          ? ('suggested ' + info.suggested + ' · from ' + info.evaluated + ' round' + (info.evaluated === 1 ? "" : "s"))
+          : 'not evaluated yet') +
+        (info.overridden ? ' · <span class="badge ov">set by parent</span>' : "") + '</div>' +
+      '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+      (info.note ? '<div class="xs faint mt6">“' + esc(info.note) + '”</div>' : "") +
+      '</div>' +
+      '<div class="scorepick">' +
+        [0,1,2,3,4].map(n => '<button class="sp ' + (info.final === n ? "on" : (info.suggested === n && !info.overridden ? "sugg" : "")) +
+          '" data-cat="' + c.key + '" data-score="' + n + '">' + n + '</button>').join("") +
+      '</div></div>';
+  }
+  h += '</div>';
+
+  h += '<div class="xs faint" style="margin:0 4px 14px">Tap a number to set the final score yourself. ' +
+       'The suggestion stays visible, and you can add a short reason.</div>';
+
+  const anyOv = CAT_KEYS.some(k => p.cats[k].overridden);
+  if (anyOv) h += '<button class="btn sm wide" id="clearOv">Reset all to suggested scores</button>';
+
+  $("#tourBody").innerHTML = h;
+
+  document.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => {
+    const k = b.dataset.cat, n = Number(b.dataset.score);
+    const cur = processScore(t).cats[k];
+    if (cur.overridden && cur.final === n){
+      delete t.overrides[k]; touch(t); renderProcessTab(t); toast("Back to the suggested score");
+      return;
+    }
+    if (n === cur.suggested && !cur.overridden){ toast("Already the suggested score"); return; }
+    t.overrides = t.overrides || {};
+    t.overrides[k] = { score:n, note:(t.overrides[k] || {}).note || "" };
+    touch(t); renderProcessTab(t);
+    askOverrideNote(t, k, n, cur.suggested);
+  });
+  const co = $("#clearOv");
+  if (co) co.onclick = () => { t.overrides = {}; touch(t); renderProcessTab(t); toast("Reset to suggested"); };
+}
+
+function askOverrideNote(t, k, n, suggested){
+  const c = CATS.find(x => x.key === k);
+  openSheet(
+    '<h3>' + c.name + ': ' + n + ' / 4</h3>' +
+    '<div class="small muted" style="margin-bottom:12px">Suggested from the rounds was ' +
+      (suggested === null ? "—" : suggested) + '. Adding a reason is optional, but it makes the history readable later.</div>' +
+    '<div class="field"><label class="fl">Why this score? (optional)</label>' +
+      '<input id="ovNote" placeholder="e.g. clock notes missing in rounds 3-5" value="' +
+      esc(((t.overrides[k]) || {}).note || "") + '"></div>' +
+    '<button class="btn pri wide" id="ovSave">Save</button>' +
+    '<button class="btn wide mt10" id="ovSkip">Skip</button>'
+  );
+  $("#ovSave").onclick = () => {
+    t.overrides[k].note = $("#ovNote").value.trim();
+    touch(t); closeSheet(); renderProcessTab(t);
+  };
+  $("#ovSkip").onclick = closeSheet;
+}
+
+/* ---------------- summary tab ---------------- */
+function renderSummaryTab(t){
+  const e = evaluate(t);
+  const { ts, base, proc, fin, hl } = e;
+  let h = "";
+
+  if (!e.complete)
+    h += '<div class="card tight" style="background:var(--amberSoft);border-color:transparent">' +
+      '<div class="small" style="color:var(--amber);font-weight:650">Provisional — ' + ts.played +
+      ' of ' + t.nRounds + ' rounds recorded. Numbers below will change.</div></div>';
+
+  h += '<div class="hero"><div class="xs faint" style="letter-spacing:.8px;font-weight:700">TOURNAMENT SCORE</div>' +
+    '<div class="mt6"><span class="big">' + ts.pts + '</span><span class="of"> / ' + t.nRounds + '</span></div>' +
+    '<div class="rec">' + recordLine(ts) + '</div></div>';
+
+  /* --- reward block --- */
+  const bandTxt = proc.band ? proc.band.label : null;
+  if (fin.isSuper){
+    h += '<div class="reward super"><div class="lab">Perfect score</div>' +
+      '<div class="val">' + money(fin.money) + '</div>' +
+      '<div class="note">🏆 ' + ts.pts + ' / ' + t.nRounds + ' — a clean sweep. This is the big one.' +
+      (fin.bonusPct ? '<br>Includes a +' + fin.bonusPct + '% process bonus.' : "") + '</div></div>';
+  } else if (fin.kind === "money"){
+    h += '<div class="reward good"><div class="lab">Final reward</div>' +
+      '<div class="val">' + money(fin.money) + '</div>' +
+      '<div class="note">' + (fin.bonusPct
+        ? 'Base ' + money(fin.baseMoney) + ' + ' + fin.bonusPct + '% for ' + bandTxt.toLowerCase()
+        : 'Base reward for ' + ts.pts + ' / ' + t.nRounds) + '</div></div>';
+  } else if (fin.kind === "waived"){
+    h += '<div class="reward waived"><div class="lab">Consequence</div>' +
+      '<div class="val">Waived</div>' +
+      '<div class="note"><span class="strike">' + humanDays(fin.baseDays) + ' without games</span><br>' +
+      'The result was ' + ts.pts + ' / ' + t.nRounds + ', but the process score was ' + proc.total +
+      ' / 20. Excellent effort, responsibility and habits — the consequence is waived.</div></div>';
+  } else if (fin.kind === "hold"){
+    h += '<div class="reward hold"><div class="lab">Break from games</div>' +
+      '<div class="val">' + humanDays(fin.days) + '</div>' +
+      '<div class="note">' + (fin.halved
+        ? '<span class="strike">' + humanDays(fin.baseDays) + '</span> — halved for ' + bandTxt.toLowerCase() + '.'
+        : 'From the result table for ' + ts.pts + ' / ' + t.nRounds + '.') +
+      '<br>Games again from <b>' + endDate(t.date, fin.days) + '</b>.' +
+      '<br>Time to reset and rebuild the habits, not a punishment for losing.</div></div>';
+  } else {
+    h += '<div class="reward neutral"><div class="lab">Result</div>' +
+      '<div class="val">No reward, no consequence</div>' +
+      '<div class="note">' + ts.pts + ' / ' + t.nRounds + ' sits right in the middle of the table.</div></div>';
+  }
+  if (base.scaled)
+    h += '<div class="xs faint" style="text-align:center;margin:-4px 0 12px">' + t.nRounds +
+      ' rounds → 6-round equivalent ' + base.equivalent + ' / 6 for the reward table.</div>';
+
+  /* --- process --- */
+  h += '<h2 class="sec">Process score</h2><div class="card">';
+  for (const c of CATS){
+    const info = proc.cats[c.key];
+    h += '<div class="kv"><span class="k">' + c.short + (info.stars ? ' <span style="color:var(--star)">★</span>' : "") + '</span>' +
+      '<span class="v">' + (info.final == null ? "—" : info.final + " / 4") + '</span></div>';
+  }
+  h += '<div class="hr"></div><div class="row between">' +
+    '<div style="font-size:15px;font-weight:750">' + (proc.total === null ? "—" : proc.total) + ' / 20</div>' +
+    (proc.band ? '<span class="pill ' + proc.band.cls + '">' + proc.band.label + '</span>' : "") +
+    '</div>';
+  if (proc.prorated) h += '<div class="xs faint mt6">Based on ' + proc.scoredCats + ' of 5 categories, scaled to 20.</div>';
+  h += '</div>';
+
+  /* --- narrative --- */
+  if (hl.stars.length){
+    h += '<h2 class="sec">Took the initiative</h2><div class="card" style="background:var(--starSoft);border-color:transparent">' +
+      '<ul class="pts star">' + hl.stars.map(s => '<li>' + esc(s) + '</li>').join("") + '</ul></div>';
+  }
+  if (hl.wins.length){
+    h += '<h2 class="sec">What ' + whoOr("he") + ' did well</h2><div class="card"><ul class="pts win">' +
+      hl.wins.map(s => '<li>' + esc(s) + '</li>').join("") + '</ul></div>';
+  }
+  if (hl.next.length){
+    h += '<h2 class="sec">Next tournament focus</h2><div class="card"><ul class="pts next">' +
+      hl.next.map(s => '<li>' + esc(s) + '</li>').join("") + '</ul></div>';
+  }
+
+  h += '<button class="btn wide mt10" id="shareBtn">Copy summary as text</button>' +
+       '<button class="btn wide danger mt10" id="delT">Delete this tournament</button>';
+
+  $("#tourBody").innerHTML = h;
+  $("#shareBtn").onclick = () => copySummary(t, e);
+  $("#delT").onclick = () => {
+    openSheet('<h3>Delete “' + esc(t.name) + '”?</h3>' +
+      '<div class="small muted" style="margin-bottom:14px">All rounds and process marks for this tournament will be removed. This cannot be undone.</div>' +
+      '<button class="btn wide danger" id="delYes">Delete</button>' +
+      '<button class="btn wide mt10" id="delNo">Keep it</button>');
+    $("#delNo").onclick = closeSheet;
+    $("#delYes").onclick = () => {
+      DB.tournaments = DB.tournaments.filter(x => x.id !== t.id);
+      save(); closeSheet(); go("home"); toast("Deleted");
+    };
+  };
+}
+
+function summaryText(t, e){
+  const { ts, proc, fin } = e;
+  const L = [];
+  L.push(t.name + " — " + fmtDate(t.date));
+  L.push("Score: " + ts.pts + "/" + t.nRounds + "  (" + recordLine(ts) + ")");
+  L.push("");
+  L.push("PROCESS");
+  for (const c of CATS){
+    const i = proc.cats[c.key];
+    L.push("  " + c.short.padEnd(16) + (i.final == null ? "—" : i.final + "/4") + (i.stars ? "  ★" : ""));
+  }
+  L.push("  TOTAL           " + (proc.total === null ? "—" : proc.total + "/20") +
+    (proc.band ? "  (" + proc.band.label + ")" : ""));
+  L.push("");
+  if (fin.kind === "money" || fin.isSuper)
+    L.push("Reward: " + money(fin.money) + (fin.bonusPct ? "  (base " + money(fin.baseMoney) + " +" + fin.bonusPct + "%)" : ""));
+  else if (fin.kind === "waived") L.push("Consequence: WAIVED (was " + humanDays(fin.baseDays) + ") — excellent process");
+  else if (fin.kind === "hold") L.push("Break from games: " + humanDays(fin.days) +
+    (fin.halved ? " (halved from " + humanDays(fin.baseDays) + ")" : "") + " — games again from " + endDate(t.date, fin.days));
+  else L.push("No reward, no consequence.");
+  if (e.hl.stars.length){ L.push(""); L.push("TOOK THE INITIATIVE"); e.hl.stars.forEach(s => L.push("  ★ " + s)); }
+  if (e.hl.wins.length){ L.push(""); L.push("WHAT WENT WELL"); e.hl.wins.forEach(s => L.push("  + " + s)); }
+  if (e.hl.next.length){ L.push(""); L.push("NEXT TOURNAMENT FOCUS"); e.hl.next.forEach(s => L.push("  → " + s)); }
+  return L.join("\n");
+}
+function copySummary(t, e){
+  const txt = summaryText(t, e);
+  const done = () => toast("Summary copied");
+  if (navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(txt).then(done, () => fallbackCopy(txt, done));
+  else fallbackCopy(txt, done);
+}
+function fallbackCopy(txt, done){
+  const ta = document.createElement("textarea");
+  ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); done(); }
+  catch(e){ openSheet('<h3>Summary</h3><textarea style="min-height:280px;font-size:12px" readonly>' + esc(txt) + '</textarea>'); }
+  ta.remove();
+}
+
+/* ==========================================================================
+   Round detail
+   ========================================================================== */
+function renderRound(){
+  const t = getT();
+  if (!t){ go("home"); return; }
+  const r = t.rounds[UI.rIdx];
+  if (!r){ go("tour"); return; }
+  const eng = r.engine || (r.engine = { acc:"", blunders:"", mistakes:"", inacc:"" });
+  let h = "";
+
+  /* result */
+  h += '<div class="card">' +
+    '<label class="fl">Result</label>' +
+    '<div class="marks m4">' +
+      [["W","Win","1"],["D","Draw","½"],["L","Loss","0"],["B","Bye","½"]].map(([v,lab,p]) =>
+        '<button class="mk ' + (r.result === v ? (v === "B" ? "on partial" : "on met") : "") + '" data-res="' + v + '">' +
+        '<span class="sym">' + p + '</span><span class="lbl">' + lab + '</span></button>').join("") +
+    '</div>' +
+    (r.result === "B" ? '<div class="xs faint" style="margin:-4px 2px 10px">Half-point bye — counts ½ toward the score, ' +
+      'and leave the process marks blank since there was no game.</div>' : "") +
+    '<div class="grid2 mt14">' +
+      '<div class="field"><label class="fl">Opponent</label>' +
+        '<input id="fOpp" value="' + esc(r.opponent) + '" placeholder="Name"></div>' +
+      '<div class="field"><label class="fl">Rating</label>' +
+        '<input id="fRat" value="' + esc(r.oppRating) + '" inputmode="numeric" placeholder="e.g. 1240"></div>' +
+    '</div>' +
+    '<label class="fl">' + whoOr("Player") + ' played</label>' +
+    '<div class="marks m2">' +
+      '<button class="mk ' + (r.color === "W" ? "on met" : "") + '" data-col="W"><span class="sym">♔</span><span class="lbl">White</span></button>' +
+      '<button class="mk ' + (r.color === "B" ? "on met" : "") + '" data-col="B"><span class="sym">♚</span><span class="lbl">Black</span></button>' +
+    '</div></div>';
+
+  /* process marks */
+  h += '<h2 class="sec">How the round went</h2>';
+  for (const c of CATS){
+    const cur = (r.proc || {})[c.key] || "";
+    h += '<div class="catblock">' +
+      '<div class="ctop"><div class="catkey">' + c.key + '</div>' +
+      '<div class="catname">' + c.name + '</div>' +
+      '<button class="helpbtn" data-help="' + c.key + '">?</button></div>' +
+      '<div class="help" id="help-' + c.key + '"><ul>' + c.help.map(x => '<li>' + x + '</li>').join("") + '</ul></div>' +
+      '<div class="marks">' + MARK_ORDER.map(m =>
+        '<button class="mk ' + m + (cur === m ? " on " + m : "") + '" data-cat="' + c.key + '" data-mark="' + m + '">' +
+        '<span class="sym">' + MARKS[m].sym + '</span><span class="lbl">' + MARKS[m].label + '</span></button>').join("") +
+      '</div></div>';
+  }
+  h += '<div class="xs faint" style="margin:-2px 4px 4px">★ Recovered is for when something went wrong and ' +
+       whoOr("the player") + ' fixed it independently — reconstructing notation, finding the opponent, ' +
+       'entering the game straight away. It scores above ✓ Met.</div>';
+
+  /* engine + notes */
+  h += '<h2 class="sec">Engine analysis <span class="faint" style="text-transform:none;letter-spacing:0">— optional</span></h2>' +
+    '<div class="card"><div class="grid2">' +
+      '<div class="field"><label class="fl">Accuracy %</label><input id="eAcc" inputmode="decimal" value="' + esc(eng.acc) + '" placeholder="0-100"></div>' +
+      '<div class="field"><label class="fl">Blunders</label><input id="eBl" inputmode="numeric" value="' + esc(eng.blunders) + '"></div>' +
+      '<div class="field"><label class="fl">Mistakes</label><input id="eMi" inputmode="numeric" value="' + esc(eng.mistakes) + '"></div>' +
+      '<div class="field"><label class="fl">Inaccuracies</label><input id="eIn" inputmode="numeric" value="' + esc(eng.inacc) + '"></div>' +
+    '</div><div class="xs faint">Supporting information only. These numbers never set the process score on their own.</div></div>';
+
+  h += '<h2 class="sec">Notes</h2><div class="card">' +
+    '<textarea id="fNotes" placeholder="What happened, what he said afterwards, anything to remember…">' + esc(r.notes) + '</textarea></div>';
+
+  const prev = UI.rIdx > 0, nxt = UI.rIdx < t.rounds.length - 1;
+  h += '<div class="row mt10" style="gap:8px">' +
+    (prev ? '<button class="btn grow" id="rPrev">‹ Round ' + t.rounds[UI.rIdx-1].n + '</button>' : "") +
+    (nxt ? '<button class="btn pri grow" id="rNext">Round ' + t.rounds[UI.rIdx+1].n + ' ›</button>'
+         : '<button class="btn pri grow" id="rDone">Done — see summary</button>') +
+    '</div>';
+
+  $("#roundBody").innerHTML = h;
+
+  /* wiring — note: capture ids in consts, never rely on e.currentTarget after re-render */
+  document.querySelectorAll("[data-res]").forEach(b => {
+    const v = b.dataset.res;
+    b.onclick = () => { r.result = (r.result === v ? "" : v); touch(t); renderRound(); };
+  });
+  document.querySelectorAll("[data-col]").forEach(b => {
+    const v = b.dataset.col;
+    b.onclick = () => { r.color = (r.color === v ? "" : v); touch(t); renderRound(); };
+  });
+  document.querySelectorAll("[data-mark]").forEach(b => {
+    const k = b.dataset.cat, m = b.dataset.mark;
+    b.onclick = () => {
+      r.proc = r.proc || {};
+      if (r.proc[k] === m) delete r.proc[k]; else r.proc[k] = m;
+      touch(t); renderRound();
+      if (m === "star" && r.proc[k] === "star") toast("★ Nice — responsibility counts double here");
+    };
+  });
+  document.querySelectorAll("[data-help]").forEach(b => {
+    const k = b.dataset.help;
+    b.onclick = () => $("#help-" + k).classList.toggle("on");
+  });
+
+  const bind = (sel, fn) => { const el = $(sel); if (el) el.oninput = () => { fn(el.value); touch(t); }; };
+  bind("#fOpp", v => r.opponent = v);
+  bind("#fRat", v => r.oppRating = v);
+  bind("#fNotes", v => r.notes = v);
+  bind("#eAcc", v => eng.acc = v);
+  bind("#eBl",  v => eng.blunders = v);
+  bind("#eMi",  v => eng.mistakes = v);
+  bind("#eIn",  v => eng.inacc = v);
+
+  if ($("#rPrev")) $("#rPrev").onclick = () => go("round", { rIdx: UI.rIdx - 1 });
+  if ($("#rNext")) $("#rNext").onclick = () => go("round", { rIdx: UI.rIdx + 1 });
+  if ($("#rDone")) $("#rDone").onclick = () => go("tour", { tab:"summary" });
+}
+
+/* ==========================================================================
+   Trends
+   ========================================================================== */
+function renderTrends(){
+  const done = DB.tournaments.slice()
+    .sort((a,b) => (a.date || "").localeCompare(b.date || "") || a.createdAt - b.createdAt)
+    .filter(t => processScore(t).total !== null);
+  let h = "";
+  if (done.length < 1){
+    h = '<div class="empty"><div class="e1">📈</div><div style="font-weight:650;margin-bottom:6px">Nothing to chart yet</div>' +
+        '<div class="small">Once a tournament has process marks, its trend shows up here.</div></div>';
+    $("#trendsBody").innerHTML = h; return;
+  }
+  const recent = done.slice(-8);
+
+  const totals = recent.map(t => processScore(t).total);
+  h += '<div class="card"><div class="trend"><div class="tn"><span>Total process score</span>' +
+    '<span class="muted">' + totals[totals.length-1] + ' / 20</span></div>' +
+    '<div class="spark">' + totals.map((v,i) =>
+      '<i class="' + (i === totals.length-1 ? "last" : "") + '" style="height:' + Math.max(4, v/20*100) + '%" title="' + v + '/20"></i>').join("") +
+    '</div><div class="tlbl">' + recent.map(t => '<span>' + esc((t.name||"").slice(0,6)) + '</span>').join("") + '</div></div></div>';
+
+  const scores = recent.map(t => ({ t, p: processScore(t), e: tournamentScore(t.rounds) }));
+  h += '<h2 class="sec">By category</h2><div class="card">';
+  for (const c of CATS){
+    const vals = scores.map(s => s.p.cats[c.key].final);
+    const shown = vals.map(v => v == null ? 0 : v);
+    const last = vals[vals.length-1];
+    const first = vals.find(v => v != null);
+    let delta = "";
+    if (last != null && first != null && vals.length > 1){
+      const d = last - first;
+      delta = d > 0 ? "▲ +" + d : d < 0 ? "▼ " + d : "— steady";
+    }
+    h += '<div class="trend"><div class="tn"><span>' + c.short + '</span>' +
+      '<span class="muted">' + (last == null ? "—" : last + " / 4") + (delta ? ' <span class="xs faint">' + delta + '</span>' : "") + '</span></div>' +
+      '<div class="spark" style="height:34px">' + shown.map((v,i) =>
+        '<i class="' + (i === shown.length-1 ? "last" : "") + '" style="height:' + Math.max(6, v/4*100) + '%"></i>').join("") +
+      '</div></div>';
+  }
+  h += '</div>';
+
+  h += '<h2 class="sec">Result vs process</h2><div class="card">';
+  for (const s of scores.slice().reverse()){
+    h += '<div class="kv"><span class="k">' + esc(s.t.name) + ' <span class="xs faint">' + fmtMonth(s.t.date) + '</span></span>' +
+      '<span class="v">' + s.e.pts + '/' + s.t.nRounds + ' &nbsp;·&nbsp; ' + s.p.total + '/20</span></div>';
+  }
+  h += '</div><div class="xs faint" style="margin:0 4px 10px">A low result next to a high process score is a good tournament. ' +
+       'That is the whole point of tracking both.</div>';
+
+  $("#trendsBody").innerHTML = h;
+}
+
+/* ==========================================================================
+   More / settings
+   ========================================================================== */
+function renderMore(){
+  const nT = DB.tournaments.length;
+  let h = "";
+  h += '<h2 class="sec">Reward table (6 rounds)</h2><div class="card tblwrap"><table class="rt"><tbody>' +
+    REWARD_TABLE.map(r => {
+      const cls = r.super ? "hi" : "";
+      const val = r.super ? money(r.money) + " 🏆" : r.money > 0 ? money(r.money)
+        : r.days > 0 ? "No games for " + humanDays(r.days) : "No reward, no consequence";
+      return '<tr class="' + cls + '"><td class="s">' + r.pts.toFixed(1) + '</td><td>' + val + '</td></tr>';
+    }).join("") + '</tbody></table></div>';
+
+  h += '<h2 class="sec">Process modifier</h2><div class="card">' +
+    PROCESS_BANDS.map(b => {
+      const hi = b.min === 18 ? "" : "";
+      const eff = b.moneyMult !== 1
+        ? "+" + Math.round((b.moneyMult-1)*100) + "% reward · " + (b.consequence === "waive" ? "consequence waived" : "consequence halved")
+        : "normal result rule";
+      return '<div class="kv"><span class="k">' + b.min + (b.min === 18 ? "–20" : "–" + (PROCESS_BANDS[PROCESS_BANDS.indexOf(b)-1].min - 1)) +
+        ' · ' + b.label + '</span><span class="v xs">' + eff + '</span></div>';
+    }).join("") + '</div>';
+
+  h += '<h2 class="sec">How a category score is suggested</h2><div class="card small muted" style="line-height:1.6">' +
+    'Each round mark earns credit: <b>✓ Met 1.0</b> · <b>★ Recovered 1.25</b> · <b>△ Partly 0.5</b> · <b>✗ Not yet 0</b>. ' +
+    'Rounds you leave blank are ignored. The credits are scaled to a 6-round basis, then banded:' +
+    '<div class="mt10"></div>' +
+    '<div class="kv"><span class="k">5–6 rounds met</span><span class="v">4</span></div>' +
+    '<div class="kv"><span class="k">4 rounds met</span><span class="v">3</span></div>' +
+    '<div class="kv"><span class="k">2–3 rounds met</span><span class="v">2</span></div>' +
+    '<div class="kv"><span class="k">1 round met</span><span class="v">1</span></div>' +
+    '<div class="kv"><span class="k">0 rounds met</span><span class="v">0</span></div>' +
+    '<div class="mt10">You can override any category. The suggestion stays on screen so the two are always comparable.</div></div>';
+
+  h += '<h2 class="sec">Player</h2><div class="card">' +
+    '<div class="kv"><span class="k">Tracking</span><span class="v">' + (who() ? esc(who()) : '<span class="faint">not set</span>') + '</span></div>' +
+    '<button class="btn wide mt14" id="nameBtn">' + (who() ? "Change name" : "Set the player\'s name") + '</button>' +
+    '<div class="xs faint mt10">Stored on this device only. The app file itself contains no name.</div></div>';
+
+  h += '<h2 class="sec">Data</h2><div class="card">' +
+    '<div class="kv"><span class="k">Tournaments stored</span><span class="v">' + nT + '</span></div>' +
+    '<div class="kv"><span class="k">Stored where</span><span class="v xs">This browser only</span></div>' +
+    '<div class="mt14"></div>' +
+    '<button class="btn wide" id="expBtn">Export backup (.json)</button>' +
+    '<button class="btn wide mt10" id="impBtn">Import backup</button>' +
+    '<input type="file" id="impFile" accept=".json,application/json" style="display:none">' +
+    (nT ? "" : '<button class="btn wide mt10" id="sampBtn">Load a sample tournament</button>') +
+    '<button class="btn wide danger mt10" id="wipeBtn">Erase everything</button>' +
+    '<div class="xs faint mt10">Data lives in this browser. Export a backup before clearing site data, ' +
+    'and to move it to another phone.</div></div>';
+
+  h += '<div class="xs faint" style="text-align:center;margin:18px 0 6px">Chess Tournament Growth Tracker ' + BUILD + '<br>' +
+    'Results matter, but controllable behaviours matter more.</div>';
+
+  $("#moreBody").innerHTML = h;
+
+  $("#nameBtn").onclick = function(){ askPlayerName(false); };
+  $("#expBtn").onclick = exportData;
+  $("#impBtn").onclick = () => $("#impFile").click();
+  $("#impFile").onchange = e => { const f = e.target.files[0]; if (f) importData(f); e.target.value = ""; };
+  const sb = $("#sampBtn"); if (sb) sb.onclick = loadSample;
+  $("#wipeBtn").onclick = () => {
+    openSheet('<h3>Erase everything?</h3><div class="small muted" style="margin-bottom:14px">' +
+      'All ' + nT + ' tournament(s) will be deleted from this browser. Export a backup first if you might want them.</div>' +
+      '<button class="btn wide danger" id="wYes">Erase</button><button class="btn wide mt10" id="wNo">Cancel</button>');
+    $("#wNo").onclick = closeSheet;
+    $("#wYes").onclick = () => { DB = { version:1, tournaments:[] }; save(); closeSheet(); go("home"); toast("Erased"); };
+  };
+}
+
+function exportData(){
+  const blob = new Blob([JSON.stringify(DB, null, 2)], { type:"application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (who() ? who().toLowerCase().replace(/[^a-z0-9]+/g,"-") : "chess") + "-tracker-" + todayISO() + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast("Backup downloaded");
+}
+function importData(file){
+  const fr = new FileReader();
+  fr.onload = () => {
+    let p;
+    try { p = JSON.parse(fr.result); }
+    catch(e){ toast("That file isn't valid JSON"); return; }
+    if (!p || !Array.isArray(p.tournaments)){ toast("Not a Chess Tracker backup"); return; }
+    const have = new Set(DB.tournaments.map(t => t.id));
+    let added = 0;
+    for (const t of p.tournaments){
+      if (!t || !t.id || have.has(t.id)) continue;
+      DB.tournaments.push(migrate(t)); added++;
+    }
+    save(); render();
+    toast(added ? "Imported " + added + " tournament" + (added === 1 ? "" : "s") : "Nothing new to import");
+  };
+  fr.readAsText(file);
+}
+/** Tolerate older/partial records rather than crashing on them. */
+function migrate(t){
+  t.nRounds = Number(t.nRounds) || (t.rounds ? t.rounds.length : 6);
+  t.rounds = Array.isArray(t.rounds) ? t.rounds : [];
+  while (t.rounds.length < t.nRounds) t.rounds.push(newRound(t.rounds.length + 1));
+  t.rounds.forEach((r, i) => {
+    r.n = r.n || i + 1;
+    r.proc = r.proc || {};
+    r.engine = r.engine || { acc:"", blunders:"", mistakes:"", inacc:"" };
+  });
+  t.overrides = t.overrides || {};
+  t.createdAt = t.createdAt || Date.now();
+  return t;
+}
+
+/* ---------------- sample data ---------------- */
+function loadSample(){
+  const t = newTournament("Sample: Autumn Open", todayISO(), 6);
+  const data = [
+    ["Maya R.","1180","W","W",{A:"met",B:"met",C:"met",D:"met",E:"met"},{acc:"88",blunders:"0",mistakes:"1",inacc:"3"},"Calm, kept the notation clean."],
+    ["Daniel K.","1310","B","L",{A:"met",B:"met",C:"partial",D:"star",E:"partial"},{acc:"76",blunders:"1",mistakes:"2",inacc:"5"},"Tough loss. Reconstructed the last 8 moves with his opponent afterwards."],
+    ["Aiden P.","1090","W","W",{A:"partial",B:"partial",C:"met",D:"met",E:"met"},{acc:"91",blunders:"0",mistakes:"0",inacc:"2"},"Notation stopped around move 30."],
+    ["Sofia L.","1265","B","D",{A:"met",B:"met",C:"met",D:"met",E:"met"},{acc:"84",blunders:"0",mistakes:"1",inacc:"4"},"Held a worse endgame. Good defending."],
+    ["Owen T.","1220","W","L",{A:"met",B:"not",C:"not",D:"met",E:"partial"},{acc:"71",blunders:"2",mistakes:"3",inacc:"6"},"Moved fast, got into time trouble anyway."],
+    ["Ruby C.","1155","B","W",{A:"met",B:"met",C:"met",D:"met",E:"met"},{acc:"87",blunders:"0",mistakes:"1",inacc:"3"},"Best game of the event."],
+  ];
+  data.forEach((d, i) => {
+    const r = t.rounds[i];
+    r.opponent = d[0]; r.oppRating = d[1]; r.color = d[2]; r.result = d[3];
+    r.proc = d[4]; r.engine = d[5]; r.notes = d[6];
+  });
+  DB.tournaments.push(t); save();
+  go("tour", { tId:t.id, tab:"summary" });
+  toast("Sample tournament loaded");
+}
+
+/* ---------------- theme ---------------- */
+function initTheme(){
+  let th = null;
+  try { th = localStorage.getItem("chessTracker.theme"); } catch(e){}
+  if (th) document.documentElement.setAttribute("data-theme", th);
+  $("#themeBtn").onclick = () => {
+    const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", cur);
+    try { localStorage.setItem("chessTracker.theme", cur); } catch(e){}
+  };
+}
+
+/* ---------------- first run ---------------- */
+function askPlayerName(first){
+  openSheet(
+    '<h3>' + (first ? "Who are we tracking?" : "Player name") + '</h3>' +
+    '<div class="small muted" style="margin-bottom:12px">First name is enough. It is stored on this device only — ' +
+    'it is never part of the app itself and never leaves this browser.</div>' +
+    '<div class="field"><input id="pnName" placeholder="First name" value="' + esc(DB.player || "") + '" autocomplete="off"></div>' +
+    '<button class="btn pri wide" id="pnGo">' + (first ? "Start" : "Save") + '</button>' +
+    (first ? '<button class="btn wide mt10" id="pnSkip">Skip for now</button>' : "")
+  );
+  setTimeout(function(){ var i = $("#pnName"); if (i) i.focus(); }, 60);
+  $("#pnGo").onclick = function(){
+    DB.player = $("#pnName").value.trim().slice(0, 24);
+    save(); closeSheet(); render();
+  };
+  var sk = $("#pnSkip"); if (sk) sk.onclick = closeSheet;
+}
+
+/* ---------------- boot ---------------- */
+load();
+DB.tournaments = (DB.tournaments || []).map(migrate);
+$("#buildTag").textContent = BUILD;
+initTheme();
+go("home");
+if (!DB.player) setTimeout(function(){ askPlayerName(true); }, 350);
+
+/* expose the pure engine for tests */
+window.CHESS = { CATS, MARKS, REWARD_TABLE, PROCESS_BANDS, tournamentScore, baseOutcome,
+  suggestScore, processScore, finalOutcome, evaluate, humanDays, highlights, summaryText,
+  plural, recordLine, endDate, who, whos, whoOr, askPlayerName,
+  newTournament, newRound, migrate,
+  _db: () => DB, _ui: () => UI, _go: go, _loadSample: loadSample };
+</script>
+</body>
+</html>
