@@ -160,6 +160,132 @@ const e55=C.evaluate(t55);
 eq('5.5/6 still bonuses to $180', e55.fin.money, 180);
 eq('bonus badge shown', e55.fin.bonusPct, 20);
 
+console.log('--- NEW: opponent strength bonus ---');
+// band boundaries (gap = opponent - player)
+eq('gap +240 -> Much stronger', C.strengthBand(240).label, 'Much stronger');
+eq('gap +200 -> Much stronger (inclusive)', C.strengthBand(200).label, 'Much stronger');
+eq('gap +199 -> Stronger', C.strengthBand(199).label, 'Stronger');
+eq('gap +76 -> Stronger (inclusive)', C.strengthBand(76).label, 'Stronger');
+eq('gap +75 -> Even', C.strengthBand(75).label, 'Even');
+eq('gap 0 -> Even', C.strengthBand(0).label, 'Even');
+eq('gap -75 -> Even (inclusive)', C.strengthBand(-75).label, 'Even');
+eq('gap -76 -> Weaker', C.strengthBand(-76).label, 'Weaker');
+eq('gap -199 -> Weaker (inclusive)', C.strengthBand(-199).label, 'Weaker');
+eq('gap -200 -> Much weaker', C.strengthBand(-200).label, 'Much weaker');
+eq('gap -900 -> Much weaker', C.strengthBand(-900).label, 'Much weaker');
+
+// the asymmetry is the whole point: playing down is NEVER penalised
+['Weaker','Much weaker'].forEach(lbl=>{
+  const b=C.STRENGTH_BANDS.find(x=>x.label===lbl);
+  eq(lbl+' win = 0', b.adj.W, 0);
+  eq(lbl+' draw = 0 (no penalty)', b.adj.D, 0);
+  eq(lbl+' loss = 0 (no penalty)', b.adj.L, 0);
+});
+eq('Even band is all zero', [C.strengthBand(0).adj.W,C.strengthBand(0).adj.D,C.strengthBand(0).adj.L], [0,0,0]);
+eq('Much stronger: W +0.5', C.strengthBand(240).adj.W, 0.5);
+eq('Much stronger: D +0.25', C.strengthBand(240).adj.D, 0.25);
+eq('Much stronger: L 0', C.strengthBand(240).adj.L, 0);
+eq('Stronger: W +0.25', C.strengthBand(120).adj.W, 0.25);
+eq('Stronger: D 0', C.strengthBand(120).adj.D, 0);
+
+// ratingOf
+eq('ratingOf "1560"', C.ratingOf('1560'), 1560);
+eq('ratingOf blank -> null', C.ratingOf(''), null);
+eq('ratingOf junk -> null', C.ratingOf('unrated'), null);
+eq('ratingOf 0 -> null', C.ratingOf('0'), null);
+eq('ratingOf undefined -> null', C.ratingOf(undefined), null);
+
+// no player rating -> no adjustment at all
+const tsA=C.newTournament('NoRating','2026-09-01',6);
+['W','W','W','W','W','W'].forEach((r,i)=>{tsA.rounds[i].result=r;tsA.rounds[i].oppRating='1900';});
+eq('no player rating -> total 0', C.strengthAdjust(tsA.rounds, '').total, 0);
+eq('no player rating -> haveMine false', C.strengthAdjust(tsA.rounds, '').haveMine, false);
+
+// The motivating case: a 1560 paired down to a 1300 — nothing is ever taken away
+const tsB=C.newTournament('PlayDown','2026-09-01',6);
+tsB.myRating='1560';
+[['L','1300'],['D','1300'],['W','1300'],['L','1400'],['D','1400'],['W','1400']]
+  .forEach(([res,rat],i)=>{tsB.rounds[i].result=res;tsB.rounds[i].oppRating=rat;});
+const eB=C.evaluate(tsB);
+eq('playing down: raw 3.0', eB.ts.pts, 3);
+eq('playing down: bonus 0', eB.str.total, 0);
+eq('playing down: adjusted == raw', eB.adjPts, 3);
+eq('playing down: reward unchanged $5', eB.fin.money, 5);
+
+// playing up earns
+const tsC=C.newTournament('PlayUp','2026-09-01',6);
+tsC.myRating='1560';
+[['W','1800'],['D','1810'],['L','1600'],['D','1620'],['W','1550'],['L','1700']]
+  .forEach(([res,rat],i)=>{tsC.rounds[i].result=res;tsC.rounds[i].oppRating=rat;});
+const eC=C.evaluate(tsC);
+eq('playing up: raw 3.0', eC.ts.pts, 3);
+eq('playing up: bonus +0.75', eC.str.total, 0.75);
+eq('playing up: adjusted 3.75', eC.adjPts, 3.75);
+eq('playing up: 3.75 snaps to 4.0 -> $20', eC.fin.money, 20);
+eq('playing up: 4 rated rounds counted', eC.str.rated, 6);
+
+// the bonus reaches the consequence half of the table too
+const tsD=C.newTournament('UpAndLost','2026-09-01',6);
+tsD.myRating='1560';
+[['L','1900'],['L','1900'],['W','1850'],['D','1880'],['L','1830'],['L','1870']]
+  .forEach(([res,rat],i)=>{tsD.rounds[i].result=res;tsD.rounds[i].oppRating=rat;});
+const eD=C.evaluate(tsD);
+eq('up+lost: raw 1.5', eD.ts.pts, 1.5);
+eq('up+lost: bonus +0.75', eD.str.total, 0.75);
+eq('up+lost: adjusted 2.25 -> snaps 2.5', eD.base.equivalent, 2.5);
+eq('up+lost: break lifted (was 14 days at 1.5)', eD.fin.days, 0);
+eq('raw 1.5 alone would be 14 days', C.baseOutcome(1.5,6).days, 14);
+
+// cap
+const tsE=C.newTournament('Capped','2026-09-01',6);
+tsE.myRating='1200';
+tsE.rounds.forEach(r=>{r.result='W';r.oppRating='1900';});
+const eE=C.evaluate(tsE);
+eq('cap: raw earned +3.0', eE.str.raw, 3);
+eq('cap: total capped at +1.0', eE.str.total, 1);
+eq('cap: flagged as capped', eE.str.capped, true);
+
+// a bonus must never manufacture a clean sweep
+const tsF=C.newTournament('AlmostPerfect','2026-09-01',6);
+tsF.myRating='1200';
+[['W','1900'],['W','1900'],['W','1900'],['W','1900'],['W','1900'],['D','1900']]
+  .forEach(([res,rat],i)=>{tsF.rounds[i].result=res;tsF.rounds[i].oppRating=rat;});
+const eF=C.evaluate(tsF);
+eq('5.5 + bonus does NOT reach 6/6', eF.base.super, undefined);
+eq('5.5 + bonus is not the $2000 tier', eF.fin.isSuper, false);
+eq('5.5 + bonus caps at the 5.5 tier', eF.base.equivalent, 5.5);
+const tsG=C.newTournament('TrulyPerfect','2026-09-01',6);
+tsG.myRating='1200';
+tsG.rounds.forEach(r=>{r.result='W';r.oppRating='1900';});
+eq('a real 6/6 still wins $2000', C.evaluate(tsG).fin.money, 2000);
+
+// byes and unrated opponents are skipped
+const tsH=C.newTournament('Mixed','2026-09-01',6);
+tsH.myRating='1560';
+[['B','1900'],['W','1900'],['W',''],['W','unrated'],['W','1900'],['L','1900']]
+  .forEach(([res,rat],i)=>{tsH.rounds[i].result=res;tsH.rounds[i].oppRating=rat;});
+const sH=C.strengthAdjust(tsH.rounds, tsH.myRating);
+eq('bye earns no bonus', sH.per[0], null);
+eq('unrated rounds skipped', sH.unrated, 2);
+eq('rated rounds counted', sH.rated, 3);
+eq('mixed total = 2 wins vs much stronger', sH.total, 1);
+
+// migrate backfills myRating
+eq('migrate adds myRating', C.migrate({id:'z',name:'old',nRounds:1,rounds:[{n:1,result:'W'}]}).myRating, '');
+eq('migrate keeps an existing myRating', C.migrate({id:'z2',name:'o',nRounds:1,myRating:'1400',rounds:[]}).myRating, '1400');
+
+// copy-as-text mentions the bonus, and never a penalty
+const stC=C.summaryText(tsC, eC);
+eq('summary text has the bonus line', /Strength bonus: \+0\.75/.test(stC), true);
+eq('summary text has no bonus line when there is none', /Strength bonus/.test(C.summaryText(tsB, eB)), false);
+eq('signed formats', [C.signed(0.5),C.signed(0),C.signed(1)], ['+0.5','0','+1']);
+
+// the More screen documents the rule
+C._go('more');
+const moreHTML=d.querySelector('#moreBody').innerHTML;
+eq('More explains the strength bonus', /Opponent strength bonus/.test(moreHTML), true);
+eq('More states playing down is free', /never costs anything/.test(moreHTML), true);
+
 console.log('\n=== '+pass+' passed, '+fail+' failed ===');
 if(errs.length){console.log('JS ERRORS:'); errs.forEach(e=>console.log('  '+e));}
 process.exit(fail?1:0);

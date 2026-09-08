@@ -203,6 +203,14 @@ nav button.on{color:var(--accent)}
 .pill.p12{background:var(--blueSoft);color:var(--blue)}
 .pill.p9{background:var(--amberSoft);color:var(--amber)}
 .pill.p0{background:var(--greySoft);color:var(--grey)}
+.pill.sUp2{background:var(--accentSoft);color:var(--accent)}
+.sUp2{color:var(--accent)} .sUp1{color:var(--accent)}
+.sEven,.sDn1,.sDn2{color:var(--muted)}
+.sadj{display:inline-block; font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:99px;
+      background:var(--accentSoft); color:var(--accent); vertical-align:1px}
+.ratebtn{font:inherit; font-size:11.5px; font-weight:700; padding:5px 12px; border-radius:99px;
+         border:1px solid var(--line); background:var(--card); color:var(--muted); cursor:pointer}
+.ratebtn:active{opacity:.6}
 
 ul.pts{list-style:none; margin-top:8px}
 ul.pts li{position:relative; padding-left:22px; font-size:13.5px; line-height:1.5; margin-bottom:7px}
@@ -420,6 +428,36 @@ const PROCESS_BANDS = [
     blurb:"Let's rebuild the basics one round at a time — start with the focus areas below." },
 ];
 
+/**
+ * Rating-strength bands. gap = opponent rating - player rating.
+ * Values are Elo expectancy at each band midpoint, taken at half weight and
+ * rounded to quarter-points, then floored to zero on the way down:
+ *
+ *   Playing UP earns a bonus. Playing DOWN never costs anything.
+ *
+ * The asymmetry is deliberate and matches the process rule — a weak result
+ * never ADDS punishment. Penalising a draw or loss against a lower-rated
+ * player would put the opponent's rating in the player's head at the board,
+ * encourage the tense "must not lose this" play that causes exactly those
+ * losses, and punish him for scholastic ratings lagging a fast-improving
+ * junior — none of which is inside his control.
+ */
+const STRENGTH_BANDS = [
+  { min:200,       label:"Much stronger", short:"much stronger", cls:"sUp2",
+    adj:{ W:0.50, D:0.25, L:0 } },
+  { min:76,        label:"Stronger",      short:"stronger",      cls:"sUp1",
+    adj:{ W:0.25, D:0,    L:0 } },
+  { min:-75,       label:"Even",          short:"an even match", cls:"sEven",
+    adj:{ W:0,    D:0,    L:0 } },
+  { min:-199,      label:"Weaker",        short:"weaker",        cls:"sDn1",
+    adj:{ W:0,    D:0,    L:0 } },
+  { min:-Infinity, label:"Much weaker",   short:"much weaker",   cls:"sDn2",
+    adj:{ W:0,    D:0,    L:0 } },
+];
+
+/** Ceiling on the strength bonus, so the raw result always stays the main number. */
+const STRENGTH_CAP = 1.0;
+
 /* ==========================================================================
    Pure scoring engine (also exposed on window for testing)
    ========================================================================== */
@@ -434,6 +472,42 @@ function tournamentScore(rounds){
     else if (r.result === "B"){ pts += 0.5; b++; }
   }
   return { pts, w, d, l, b, played };
+}
+
+/** The band a rating gap falls in. gap = opponent - player. */
+function strengthBand(gap){
+  return STRENGTH_BANDS.find(b => gap >= b.min) || STRENGTH_BANDS[STRENGTH_BANDS.length - 1];
+}
+
+function ratingOf(v){
+  const n = Number(String(v == null ? "" : v).trim());
+  return String(v == null ? "" : v).trim() !== "" && isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Strength adjustment across the tournament.
+ * Only rounds where BOTH ratings are known and the result is W/D/L count —
+ * byes and unrated opponents are left alone. The total is capped at
+ * +/- STRENGTH_CAP so the raw result always stays the primary number.
+ */
+function strengthAdjust(rounds, myRating){
+  const mine = ratingOf(myRating);
+  const per = rounds.map(() => null);
+  let raw = 0, rated = 0, unrated = 0;
+  if (mine){
+    rounds.forEach((r, i) => {
+      if (!r.result || r.result === "B") return;
+      const opp = ratingOf(r.oppRating);
+      if (opp == null){ unrated++; return; }
+      const band = strengthBand(opp - mine);
+      const a = band.adj[r.result] || 0;
+      per[i] = { gap: opp - mine, band, adj: a };
+      raw += a; rated++;
+    });
+  }
+  const total = Math.max(-STRENGTH_CAP, Math.min(STRENGTH_CAP, raw));
+  return { per, raw: Math.round(raw * 100) / 100, total: Math.round(total * 100) / 100,
+           capped: Math.abs(raw - total) > 1e-9, rated, unrated, haveMine: !!mine };
 }
 
 /** "1 draw" not "1 draws". */
@@ -567,12 +641,19 @@ function highlights(t, proc){
 /** Everything the summary screen needs. */
 function evaluate(t){
   const ts = tournamentScore(t.rounds);
-  const base = baseOutcome(ts.pts, t.nRounds);
+  const str = strengthAdjust(t.rounds, t.myRating);
+  // The bonus-adjusted score is what the reward table reads; the raw score
+  // stays on screen next to it so the two are always comparable.
+  const adjPts = Math.round(Math.max(0, Math.min(t.nRounds, ts.pts + str.total)) * 100) / 100;
+  let base = baseOutcome(adjPts, t.nRounds);
+  // A bonus must never MANUFACTURE a clean sweep — the perfect-score prize is
+  // for actually winning every game, not for rounding up into the top tier.
+  if (base.super && ts.pts < t.nRounds) base = baseOutcome(t.nRounds - 0.5, t.nRounds);
   const proc = processScore(t);
   const fin = finalOutcome(base, proc);
   const hl = highlights(t, proc);
   const complete = t.rounds.every(r => r.result);
-  return { ts, base, proc, fin, hl, complete };
+  return { ts, str, adjPts, base, proc, fin, hl, complete };
 }
 
 /* ==========================================================================
@@ -585,6 +666,8 @@ let DB = { version:1, player:"", tournaments:[] };
 function who(){ return (DB.player || "").trim(); }
 function whoOr(fallback){ return who() || (fallback || "your player"); }
 function whos(){ const n = who(); return n ? (/s$/i.test(n) ? n + "'" : n + "'s") : "Your player's"; }
+/** whos() for mid-sentence use — a real name keeps its capital, the fallback does not. */
+function whosLow(){ return who() ? whos() : "your player's"; }
 let UI = { view:"home", tab:"rounds", tId:null, rIdx:0 };
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -612,7 +695,7 @@ function newRound(n){
 }
 function newTournament(name, date, nRounds){
   const n = Math.max(1, Math.min(15, Number(nRounds) || 6));
-  return { id:uid(), name:name || "Tournament", date:date || todayISO(), nRounds:n,
+  return { id:uid(), name:name || "Tournament", date:date || todayISO(), nRounds:n, myRating:"",
            rounds:Array.from({length:n}, (_, i) => newRound(i+1)),
            overrides:{}, createdAt:Date.now(), updatedAt:Date.now() };
 }
@@ -638,6 +721,37 @@ function fmtMonth(iso){
   return d.toLocaleDateString(undefined, { month:"short", year:"numeric" });
 }
 function money(n){ return "$" + Number(n).toLocaleString(); }
+/** Plain-English explanation of the whole-tournament strength bonus. */
+function strengthSummaryLine(t, str){
+  const up = [];
+  str.per.forEach((x, i) => {
+    if (x && x.adj > 0) up.push('R' + t.rounds[i].n + ' ' + x.band.short + ' ' + signed(x.adj));
+  });
+  const parts = [];
+  if (up.length) parts.push('Credit for playing up: ' + up.join(", ") + '.');
+  if (str.capped) parts.push('Capped at ' + signed(str.total) + ' (earned ' + signed(str.raw) +
+    ') so the result stays the main number.');
+  if (str.unrated) parts.push(plural(str.unrated, "round") + ' had no opponent rating, so no bonus there.');
+  parts.push('Results against lower-rated opponents are never penalised.');
+  return parts.join(" ");
+}
+
+/** One line of plain English about the rating gap in a round. */
+function strengthLine(t, r){
+  const mine = ratingOf(t.myRating), opp = ratingOf(r.oppRating);
+  if (!mine) return 'Add ' + esc(whosLow()) + ' rating on the rounds screen to adjust for opponent strength.';
+  if (r.result === "B") return 'Bye — no strength adjustment.';
+  if (opp == null) return 'No opponent rating — this round gets no strength adjustment.';
+  const gap = opp - mine, band = strengthBand(gap);
+  const base = band.label + ' opponent (' + signed(gap) + ')';
+  if (!r.result) return base + '. Pick a result to see the adjustment.';
+  const a = band.adj[r.result] || 0;
+  if (a) return base + ' — bonus ' + signed(a) + ' for this round.';
+  return base + ' — ' + (gap < -75 ? 'normal value, no penalty for playing down.' : 'no bonus for this one.');
+}
+
+/** "+0.5" / "-0.25" / "0" — for strength adjustments. */
+function signed(n){ return (n > 0 ? "+" : "") + (Math.round(n * 100) / 100); }
 let toastTimer = null;
 function toast(msg){
   const el = $("#toast"); el.textContent = msg; el.classList.add("on");
@@ -757,6 +871,27 @@ function renderHome(){
     el.onclick = () => go("tour", { tId: el.dataset.open, tab:"rounds" }));
 }
 
+/** Ratings barely move between events — prefill from the most recent one. */
+function lastRating(){
+  const t = DB.tournaments.slice().sort((a,b) => (b.date || "").localeCompare(a.date || ""))
+    .find(x => ratingOf(x.myRating));
+  return t ? t.myRating : "";
+}
+
+/** Set or change the player's rating for one tournament. */
+function askMyRating(t){
+  openSheet(
+    '<h3>' + esc(whos()) + ' rating</h3>' +
+    '<div class="field"><label class="fl">Rating at this tournament</label>' +
+      '<input id="mrVal" inputmode="numeric" placeholder="e.g. 1560" value="' + esc(t.myRating || "") + '"></div>' +
+    '<div class="xs faint" style="margin:2px 2px 14px">Compared with each opponent\'s rating to adjust the score for ' +
+      'the strength of the field. Clear it to turn the adjustment off for this tournament.</div>' +
+    '<button class="btn pri wide" id="mrGo">Save</button>'
+  );
+  setTimeout(() => { const i = $("#mrVal"); if (i) i.focus(); }, 60);
+  $("#mrGo").onclick = () => { t.myRating = $("#mrVal").value.trim(); touch(t); closeSheet(); render(); };
+}
+
 function askNewTournament(){
   openSheet(
     '<h3>New tournament</h3>' +
@@ -766,13 +901,17 @@ function askNewTournament(){
       '<input id="ntDate" type="date" value="' + todayISO() + '"></div>' +
       '<div class="field"><label class="fl">Rounds</label>' +
       '<input id="ntRounds" type="number" min="1" max="15" value="6" inputmode="numeric"></div></div>' +
-    '<div class="xs faint" style="margin:2px 2px 12px">The reward table is built for 6 rounds. Other lengths are ' +
-      'converted to a 6-round equivalent before looking up the reward.</div>' +
+    '<div class="field"><label class="fl">' + whos() + ' rating at this tournament</label>' +
+      '<input id="ntRating" inputmode="numeric" placeholder="e.g. 1560" value="' + esc(lastRating()) + '"></div>' +
+    '<div class="xs faint" style="margin:2px 2px 12px">Used with each opponent\'s rating to adjust the score for how ' +
+      'strong the field was. Leave blank to skip the adjustment. The reward table is built for 6 rounds — other ' +
+      'lengths are converted to a 6-round equivalent before looking up the reward.</div>' +
     '<button class="btn pri wide" id="ntGo">Create</button>'
   );
   setTimeout(() => { const i = $("#ntName"); if (i) i.focus(); }, 60);
   $("#ntGo").onclick = () => {
     const t = newTournament($("#ntName").value.trim(), $("#ntDate").value, $("#ntRounds").value);
+    t.myRating = $("#ntRating").value.trim();
     DB.tournaments.push(t); save(); closeSheet();
     go("tour", { tId:t.id, tab:"rounds" });
   };
@@ -797,19 +936,25 @@ function renderRoundsTab(t){
     (e.complete ? "" : '<div class="provis">In progress · ' + e.ts.played + ' of ' + t.nRounds + ' rounds</div>') +
     '<div><span class="big">' + e.ts.pts + '</span><span class="of"> / ' + t.nRounds + '</span></div>' +
     '<div class="rec">' + recordLine(e.ts) + '</div>' +
+    '<div class="mt10"><button class="ratebtn" id="myRatBtn">' +
+      (ratingOf(t.myRating)
+        ? 'Rating ' + esc(t.myRating) + (e.str.total ? ' · bonus ' + signed(e.str.total) : '')
+        : 'Add ' + esc(whosLow()) + ' rating') + '</button></div>' +
     '</div>';
 
   for (let i = 0; i < t.rounds.length; i++){
     const r = t.rounds[i];
     const marks = CAT_KEYS.map(k => (r.proc || {})[k] || "");
     const opp = r.opponent ? esc(r.opponent) : '<span class="faint">Tap to add</span>';
+    const st = e.str.per[i];
     const bits = [];
     if (r.oppRating) bits.push(esc(r.oppRating));
     if (r.color) bits.push(r.color === "W" ? "White" : "Black");
     if (r.engine && r.engine.acc !== "" && r.engine.acc != null) bits.push(r.engine.acc + "% acc");
     h += '<div class="rl" data-r="' + i + '">' +
       '<div class="num">' + r.n + '</div>' +
-      '<div class="grow"><div class="opp">' + opp + '</div>' +
+      '<div class="grow"><div class="opp">' + opp +
+        (st && st.adj ? ' <span class="sadj ' + st.band.cls + '">' + signed(st.adj) + '</span>' : "") + '</div>' +
         '<div class="meta">' + (bits.join(" · ") || "—") + '</div>' +
         '<div class="dots">' + marks.map(m => '<div class="dot ' + (m || "") + '"></div>').join("") + '</div>' +
       '</div>' +
@@ -817,8 +962,11 @@ function renderRoundsTab(t){
       '</div>';
   }
   h += '<div class="xs faint" style="text-align:center;margin-top:10px">' +
-       'Dots = the five process categories for that round.</div>';
+       'Dots = the five process categories for that round.' +
+       (e.str.unrated ? '<br>' + plural(e.str.unrated, "round") + ' with no opponent rating — no strength adjustment there.' : "") +
+       '</div>';
   $("#tourBody").innerHTML = h;
+  const mb = $("#myRatBtn"); if (mb) mb.onclick = () => askMyRating(t);
   document.querySelectorAll("[data-r]").forEach(el =>
     el.onclick = () => go("round", { rIdx: Number(el.dataset.r) }));
 }
@@ -906,7 +1054,9 @@ function askOverrideNote(t, k, n, suggested){
 /* ---------------- summary tab ---------------- */
 function renderSummaryTab(t){
   const e = evaluate(t);
-  const { ts, base, proc, fin, hl } = e;
+  const { ts, str, adjPts, base, proc, fin, hl } = e;
+  // What the reward table actually read — raw score unless a strength adjustment applied.
+  const scoreFor = adjPts + " / " + t.nRounds;
   let h = "";
 
   if (!e.complete)
@@ -914,40 +1064,55 @@ function renderSummaryTab(t){
       '<div class="small" style="color:var(--amber);font-weight:650">Provisional — ' + ts.played +
       ' of ' + t.nRounds + ' rounds recorded. Numbers below will change.</div></div>';
 
+  // The raw score is the number the player can recite — it stays the headline.
+  const bonus = str.total > 0;
   h += '<div class="hero"><div class="xs faint" style="letter-spacing:.8px;font-weight:700">TOURNAMENT SCORE</div>' +
     '<div class="mt6"><span class="big">' + ts.pts + '</span><span class="of"> / ' + t.nRounds + '</span></div>' +
-    '<div class="rec">' + recordLine(ts) + '</div></div>';
+    '<div class="rec">' + recordLine(ts) + '</div>' +
+    (bonus ? '<div class="mt10"><span class="pill sUp2">Strength bonus ' + signed(str.total) +
+             ' → counts as ' + adjPts + '</span></div>' : "") +
+    '</div>';
+
+  if (bonus)
+    h += '<div class="card tight"><div class="kv"><span class="k">Raw score</span><span class="v">' + ts.pts + ' / ' + t.nRounds + '</span></div>' +
+      '<div class="kv"><span class="k">Strength bonus — played up</span><span class="v sUp2">' + signed(str.total) + '</span></div>' +
+      '<div class="kv"><span class="k">Counts as — used for the reward</span><span class="v">' + adjPts + ' / ' + t.nRounds + '</span></div>' +
+      '<div class="xs faint mt10">' + strengthSummaryLine(t, str) + '</div></div>';
+  else if (str.haveMine && str.rated)
+    h += '<div class="xs faint" style="text-align:center;margin:-4px 0 12px">' +
+      'No strength bonus this time — nobody in the field was rated well above ' + esc(whoOr("the player")) +
+      '. Playing down never costs anything.</div>';
 
   /* --- reward block --- */
   const bandTxt = proc.band ? proc.band.label : null;
   if (fin.isSuper){
     h += '<div class="reward super"><div class="lab">Perfect score</div>' +
       '<div class="val">' + money(fin.money) + '</div>' +
-      '<div class="note">🏆 ' + ts.pts + ' / ' + t.nRounds + ' — a clean sweep. This is the big one.</div></div>';
+      '<div class="note">🏆 ' + scoreFor + ' — a clean sweep. This is the big one.</div></div>';
   } else if (fin.kind === "money"){
     h += '<div class="reward good"><div class="lab">Final reward</div>' +
       '<div class="val">' + money(fin.money) + '</div>' +
       '<div class="note">' + (fin.bonusPct
         ? 'Base ' + money(fin.baseMoney) + ' + ' + fin.bonusPct + '% for ' + bandTxt.toLowerCase()
-        : 'Base reward for ' + ts.pts + ' / ' + t.nRounds) + '</div></div>';
+        : 'Base reward for ' + scoreFor) + '</div></div>';
   } else if (fin.kind === "waived"){
     h += '<div class="reward waived"><div class="lab">Consequence</div>' +
       '<div class="val">Waived</div>' +
       '<div class="note"><span class="strike">' + humanDays(fin.baseDays) + ' without games</span><br>' +
-      'The result was ' + ts.pts + ' / ' + t.nRounds + ', but the process score was ' + proc.total +
+      'The result was ' + scoreFor + ', but the process score was ' + proc.total +
       ' / 20. Excellent effort, responsibility and habits — the consequence is waived.</div></div>';
   } else if (fin.kind === "hold"){
     h += '<div class="reward hold"><div class="lab">Break from games</div>' +
       '<div class="val">' + humanDays(fin.days) + '</div>' +
       '<div class="note">' + (fin.halved
         ? '<span class="strike">' + humanDays(fin.baseDays) + '</span> — halved for ' + bandTxt.toLowerCase() + '.'
-        : 'From the result table for ' + ts.pts + ' / ' + t.nRounds + '.') +
+        : 'From the result table for ' + scoreFor + '.') +
       '<br>Games again from <b>' + endDate(t.date, fin.days) + '</b>.' +
       '<br>Time to reset and rebuild the habits, not a punishment for losing.</div></div>';
   } else {
     h += '<div class="reward neutral"><div class="lab">Result</div>' +
       '<div class="val">No reward, no consequence</div>' +
-      '<div class="note">' + ts.pts + ' / ' + t.nRounds + ' sits right in the middle of the table.</div></div>';
+      '<div class="note">' + scoreFor + ' sits right in the middle of the table.</div></div>';
   }
   if (base.scaled)
     h += '<div class="xs faint" style="text-align:center;margin:-4px 0 12px">' + t.nRounds +
@@ -1004,6 +1169,9 @@ function summaryText(t, e){
   const L = [];
   L.push(t.name + " — " + fmtDate(t.date));
   L.push("Score: " + ts.pts + "/" + t.nRounds + "  (" + recordLine(ts) + ")");
+  if (e.str.total > 0)
+    L.push("Strength bonus: " + signed(e.str.total) + " for playing up  ->  counts as " +
+           e.adjPts + "/" + t.nRounds);
   L.push("");
   L.push("PROCESS");
   for (const c of CATS){
@@ -1067,6 +1235,7 @@ function renderRound(){
       '<div class="field"><label class="fl">Rating</label>' +
         '<input id="fRat" value="' + esc(r.oppRating) + '" inputmode="numeric" placeholder="e.g. 1240"></div>' +
     '</div>' +
+    '<div id="fStr" class="xs faint" style="margin:-6px 2px 12px">' + strengthLine(t, r) + '</div>' +
     '<label class="fl">' + whoOr("Player") + ' played</label>' +
     '<div class="marks m2">' +
       '<button class="mk ' + (r.color === "W" ? "on met" : "") + '" data-col="W"><span class="sym">♔</span><span class="lbl">White</span></button>' +
@@ -1137,7 +1306,8 @@ function renderRound(){
 
   const bind = (sel, fn) => { const el = $(sel); if (el) el.oninput = () => { fn(el.value); touch(t); }; };
   bind("#fOpp", v => r.opponent = v);
-  bind("#fRat", v => r.oppRating = v);
+  // Live-update the strength line without re-rendering — a re-render loses focus.
+  bind("#fRat", v => { r.oppRating = v; const el = $("#fStr"); if (el) el.innerHTML = strengthLine(t, r); });
   bind("#fNotes", v => r.notes = v);
   bind("#eAcc", v => eng.acc = v);
   bind("#eBl",  v => eng.blunders = v);
@@ -1226,6 +1396,26 @@ function renderMore(){
         ' · ' + b.label + '</span><span class="v xs">' + eff + '</span></div>';
     }).join("") + '</div>';
 
+  h += '<h2 class="sec">Opponent strength bonus</h2><div class="card">' +
+    '<div class="small muted" style="line-height:1.6">Each round compares ' + esc(whosLow()) +
+      ' rating with the opponent\'s. Playing up earns a bonus on the tournament score; ' +
+      '<b>playing down never costs anything</b> — a draw or a loss against a lower-rated player is worth ' +
+      'exactly what it always was.</div>' +
+    '<div class="mt10"></div>' +
+    STRENGTH_BANDS.map(b => {
+      const rng = b.min === 200 ? "+200 or more" : b.min === 76 ? "+76 to +199"
+        : b.min === -75 ? "−75 to +75" : b.min === -199 ? "−76 to −199" : "−200 or more";
+      const a = b.adj;
+      const eff = (a.W || a.D)
+        ? "win " + signed(a.W) + " · draw " + signed(a.D) + " · loss 0"
+        : "no change";
+      return '<div class="kv"><span class="k">' + b.label + ' &nbsp;<span class="faint">' + rng + '</span></span>' +
+        '<span class="v xs ' + b.cls + '">' + eff + '</span></div>';
+    }).join("") +
+    '<div class="xs faint mt10">The bonus across a whole tournament is capped at +' + STRENGTH_CAP +
+      ', so the raw result stays the main number. Byes and unrated opponents are skipped. ' +
+      'A bonus can never create a ' + '6 / 6' + ' — the perfect-score prize needs every game actually won.</div></div>';
+
   h += '<h2 class="sec">How a category score is suggested</h2><div class="card small muted" style="line-height:1.6">' +
     'Each round mark earns credit: <b>✓ Met 1.0</b> · <b>★ Recovered 1.25</b> · <b>△ Partly 0.5</b> · <b>✗ Not yet 0</b>. ' +
     'Rounds you leave blank are ignored. The credits are scaled to a 6-round basis, then banded:' +
@@ -1303,6 +1493,7 @@ function importData(file){
 /** Tolerate older/partial records rather than crashing on them. */
 function migrate(t){
   t.nRounds = Number(t.nRounds) || (t.rounds ? t.rounds.length : 6);
+  if (t.myRating == null) t.myRating = "";   // added with the rating-strength rule
   t.rounds = Array.isArray(t.rounds) ? t.rounds : [];
   while (t.rounds.length < t.nRounds) t.rounds.push(newRound(t.rounds.length + 1));
   t.rounds.forEach((r, i) => {
@@ -1318,13 +1509,14 @@ function migrate(t){
 /* ---------------- sample data ---------------- */
 function loadSample(){
   const t = newTournament("Sample: Autumn Open", todayISO(), 6);
+  t.myRating = "1240";
   const data = [
     ["Maya R.","1180","W","W",{A:"met",B:"met",C:"met",D:"met",E:"met"},{acc:"88",blunders:"0",mistakes:"1",inacc:"3"},"Calm, kept the notation clean."],
     ["Daniel K.","1310","B","L",{A:"met",B:"met",C:"partial",D:"star",E:"partial"},{acc:"76",blunders:"1",mistakes:"2",inacc:"5"},"Tough loss. Reconstructed the last 8 moves with his opponent afterwards."],
     ["Aiden P.","1090","W","W",{A:"partial",B:"partial",C:"met",D:"met",E:"met"},{acc:"91",blunders:"0",mistakes:"0",inacc:"2"},"Notation stopped around move 30."],
-    ["Sofia L.","1265","B","D",{A:"met",B:"met",C:"met",D:"met",E:"met"},{acc:"84",blunders:"0",mistakes:"1",inacc:"4"},"Held a worse endgame. Good defending."],
+    ["Sofia L.","1480","B","D",{A:"met",B:"met",C:"met",D:"met",E:"met"},{acc:"84",blunders:"0",mistakes:"1",inacc:"4"},"Held a worse endgame. Good defending."],
     ["Owen T.","1220","W","L",{A:"met",B:"not",C:"not",D:"met",E:"partial"},{acc:"71",blunders:"2",mistakes:"3",inacc:"6"},"Moved fast, got into time trouble anyway."],
-    ["Ruby C.","1155","B","W",{A:"met",B:"met",C:"met",D:"met",E:"met"},{acc:"87",blunders:"0",mistakes:"1",inacc:"3"},"Best game of the event."],
+    ["Ruby C.","1420","B","W",{A:"met",B:"met",C:"met",D:"met",E:"met"},{acc:"87",blunders:"0",mistakes:"1",inacc:"3"},"Best game of the event."],
   ];
   data.forEach((d, i) => {
     const r = t.rounds[i];
@@ -1375,9 +1567,11 @@ go("home");
 if (!DB.player) setTimeout(function(){ askPlayerName(true); }, 350);
 
 /* expose the pure engine for tests */
-window.CHESS = { CATS, MARKS, REWARD_TABLE, PROCESS_BANDS, tournamentScore, baseOutcome,
+window.CHESS = { CATS, MARKS, REWARD_TABLE, PROCESS_BANDS, STRENGTH_BANDS, STRENGTH_CAP,
+  tournamentScore, strengthBand, strengthAdjust, ratingOf, baseOutcome,
   suggestScore, processScore, finalOutcome, evaluate, humanDays, highlights, summaryText,
-  plural, recordLine, endDate, who, whos, whoOr, askPlayerName,
+  plural, recordLine, endDate, signed, strengthLine, strengthSummaryLine, lastRating, whosLow,
+  who, whos, whoOr, askPlayerName,
   newTournament, newRound, migrate,
   _db: () => DB, _ui: () => UI, _go: go, _loadSample: loadSample };
 </script>

@@ -26,15 +26,19 @@ const URL_=process.argv[2];
     if(ok){pass++;console.log('  ok   '+name);}else{fail++;console.log('  FAIL '+name+'\n         got  '+JSON.stringify(got)+'\n         want '+JSON.stringify(want));}};
   const tt=(name,cond)=>t(name,!!cond,true);
 
+  // Start from a genuinely clean slate so the suite is re-runnable against the
+  // same Chrome profile — otherwise run 2 inherits run 1's tournaments.
+  await go(URL_+'?t='+Date.now());
+  await ev(`(localStorage.clear(),1)`);
   await go(URL_+'?t='+Date.now());
 
   console.log('\n[1] FIRST RUN');
   tt('name sheet opens', await ev(`document.querySelector('#modal').classList.contains('on')`));
   t('prompt copy', await ev(`document.querySelector('#sheet h3').textContent`), 'Who are we tracking?');
-  await ev(`(document.querySelector('#pnName').value='Evan', document.querySelector('#pnGo').click(), 1)`);
+  await ev(`(document.querySelector('#pnName').value='Robin', document.querySelector('#pnGo').click(), 1)`);
   await new Promise(r=>setTimeout(r,300));
-  t('name saved', await ev(`window.CHESS._db().player`), 'Evan');
-  t('header personalised', await ev(`document.querySelector('#hTitle').textContent`), "Evan's Chess Growth Tracker");
+  t('name saved', await ev(`window.CHESS._db().player`), 'Robin');
+  t('header personalised', await ev(`document.querySelector('#hTitle').textContent`), "Robin's Chess Growth Tracker");
   tt('sheet closed', await ev(`!document.querySelector('#modal').classList.contains('on')`));
 
   console.log('\n[2] CREATE TOURNAMENT (real clicks)');
@@ -120,7 +124,7 @@ const URL_=process.argv[2];
   console.log('\n[8] PERSISTENCE ACROSS RELOAD');
   await go(URL_);
   t('tournament survived', await ev(`window.CHESS._db().tournaments.length`), 1);
-  t('name survived', await ev(`window.CHESS._db().player`), 'Evan');
+  t('name survived', await ev(`window.CHESS._db().player`), 'Robin');
   t('round data survived', await ev(`window.CHESS._db().tournaments[0].rounds[0].opponent`), 'Maya R.');
   tt('no name prompt on return', await ev(`!document.querySelector('#modal').classList.contains('on')`));
 
@@ -132,7 +136,7 @@ const URL_=process.argv[2];
   await ev(`(document.querySelector('[data-nav="more"]').click(),1)`); await new Promise(r=>setTimeout(r,400));
   t('more view', await ev(`window.CHESS._ui().view`), 'more');
   t('reward table rows', await ev(`document.querySelectorAll('table.rt tr').length`), 13);
-  tt('shows tracked name', await ev(`document.body.innerText.indexOf('Evan')>-1`));
+  tt('shows tracked name', await ev(`document.body.innerText.indexOf('Robin')>-1`));
   tt('super row highlighted', await ev(`!!document.querySelector('table.rt tr.hi')`));
 
   console.log('\n[10] THEME TOGGLE');
@@ -155,7 +159,59 @@ const URL_=process.argv[2];
   t('restored from snapshot', await ev(`window.CHESS._db().tournaments.length`), 1);
   t('restored round intact', await ev(`window.CHESS._db().tournaments[0].rounds[0].opponent`), 'Maya R.');
 
-  console.log('\n[12] LAYOUT + ERRORS');
+  console.log('\n[12] OPPONENT STRENGTH BONUS (real clicks)');
+  await ev(`(window.CHESS._db().tournaments.length=0,window.CHESS._go('home'),1)`);
+  await new Promise(r=>setTimeout(r,250));
+  await ev(`(document.querySelector('#newT').click(),1)`);
+  await new Promise(r=>setTimeout(r,250));
+  tt('rating field on the create sheet', await ev(`!!document.querySelector('#ntRating')`));
+  await ev(`(document.querySelector('#ntName').value='Strength Open',document.querySelector('#ntDate').value='2026-09-05',document.querySelector('#ntRounds').value='6',document.querySelector('#ntRating').value='1560',document.querySelector('#ntGo').click(),1)`);
+  await new Promise(r=>setTimeout(r,350));
+  t('player rating stored', await ev(`window.CHESS._db().tournaments[0].myRating`), '1560');
+  tt('rating chip on the rounds screen', await ev(`!!document.querySelector('#myRatBtn')`));
+
+  // R1: beat an 1800 -> +0.5
+  await ev(`(document.querySelectorAll('[data-r]')[0].click(),1)`); await new Promise(r=>setTimeout(r,300));
+  await ev(`(document.querySelector('[data-res="W"]').click(),1)`); await new Promise(r=>setTimeout(r,250));
+  await ev(`(function(){var r=document.querySelector('#fRat');r.value='1800';r.oninput();return 1})()`);
+  await new Promise(r=>setTimeout(r,250));
+  tt('round shows the bonus live', /bonus \+0\.5/.test(await ev(`document.querySelector('#fStr').textContent`)));
+
+  // R2: lose to a 1300 -> explicitly no penalty
+  await ev(`(window.CHESS._go('round',{rIdx:1}),1)`); await new Promise(r=>setTimeout(r,300));
+  await ev(`(document.querySelector('[data-res="L"]').click(),1)`); await new Promise(r=>setTimeout(r,250));
+  await ev(`(function(){var r=document.querySelector('#fRat');r.value='1300';r.oninput();return 1})()`);
+  await new Promise(r=>setTimeout(r,250));
+  const downTxt = await ev(`document.querySelector('#fStr').textContent`);
+  tt('loss to a 1300 says no penalty', /no penalty for playing down/.test(downTxt));
+  tt('and never shows a minus', !/-0\./.test(downTxt.replace(/\(-\d+\)/,'')));
+
+  // remaining rounds
+  for (const [i,res,rat] of [[2,'L','1600'],[3,'D','1620'],[4,'W','1550'],[5,'L','1700']]){
+    await ev(`(window.CHESS._go('round',{rIdx:${i}}),1)`); await new Promise(r=>setTimeout(r,260));
+    await ev(`(document.querySelector('[data-res="${res}"]').click(),1)`); await new Promise(r=>setTimeout(r,220));
+    await ev(`(function(){var r=document.querySelector('#fRat');r.value='${rat}';r.oninput();return 1})()`);
+    await new Promise(r=>setTimeout(r,180));
+  }
+  const evalT = await ev(`(function(){var t=window.CHESS._db().tournaments[0],e=window.CHESS.evaluate(t);
+    return {raw:e.ts.pts,bonus:e.str.total,adj:e.adjPts,money:e.fin.money}})()`);
+  t('raw 2.5, bonus +0.5, counts as 3.0', [evalT.raw,evalT.bonus,evalT.adj], [2.5,0.5,3]);
+  t('bonus lifts a neutral 2.5 to a $5 reward', evalT.money, 5);
+
+  await ev(`(window.CHESS._go('tour',{tab:'summary'}),1)`); await new Promise(r=>setTimeout(r,400));
+  const sumTxt = await ev(`document.querySelector('#tourBody').textContent`);
+  tt('summary headline is still the raw score', /TOURNAMENT SCORE/.test(sumTxt));
+  tt('summary shows the bonus', /Strength bonus \+0\.5/.test(sumTxt));
+  tt('summary shows what it counts as', /counts as 3/.test(sumTxt));
+  tt('summary reassures about playing down', /never penalised/.test(sumTxt));
+  tt('no minus sign anywhere in the summary', !/−0\.|\s-0\./.test(sumTxt));
+
+  await ev(`(window.CHESS._go('more'),1)`); await new Promise(r=>setTimeout(r,350));
+  const moreTxt = await ev(`document.querySelector('#moreBody').textContent`);
+  tt('More documents the bonus table', /Opponent strength bonus/.test(moreTxt));
+  tt('More says playing down is free', /never costs anything/.test(moreTxt));
+
+  console.log('\n[13] LAYOUT + ERRORS');
   for (const w of [320,390,430]){
     await send('Emulation.setDeviceMetricsOverride',{width:w,height:844,deviceScaleFactor:2,mobile:true});
     await ev(`(window.CHESS._go('round',{rIdx:0}),1)`); await new Promise(r=>setTimeout(r,350));
