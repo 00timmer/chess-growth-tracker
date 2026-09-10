@@ -90,8 +90,37 @@ can be excellent; a 90-accuracy game with one avoidable blunder may not be.
 | 0.5 | No games for 6 weeks |
 | 0.0 | No games for 2 months |
 
-Tournaments with a round count other than 6 are converted to a 6-round
-equivalent (`score / rounds × 6`, snapped to the nearest 0.5) before lookup.
+## Reward table (4-round basis)
+
+A four-round event has **its own table, not a converted one.** A short event is
+a smaller achievement, so it deliberately pays less at the same percentage —
+3 / 4 and 4.5 / 6 are both 75%, and pay **$10** and **$40**.
+
+| Score | Outcome |
+|---|---|
+| 4.0 | **$100** |
+| 3.5 | $20 |
+| 3.0 | $10 |
+| 2.5 | No reward, no consequence |
+| 2.0 | No reward, no consequence |
+| 1.5 | No games for 1 week |
+| 1.0 | No games for 2 weeks |
+| 0.5 | No games for 1 month |
+| 0.0 | No games for 6 weeks |
+
+Money starts **above half** — an even 2.0 / 4 neither pays nor costs, and so
+does 2.5. The consequences are one step gentler than the six-round ladder
+throughout, because four games is a small sample: one bad morning should not
+cost what a bad weekend does.
+
+**The $2,000 needs six games actually won.** A clean sweep of a shorter event
+tops out at that table's best tier — sweeping four is roughly three times more
+likely than sweeping six, and the prize is meant to be a rare achievement, not
+the cheap route to it.
+
+Lengths other than 4 and 6 are converted to a 6-round equivalent
+(`score / rounds × 6`, snapped to the nearest 0.5) before lookup, and still
+cannot reach the $2,000 unless the event is at least six rounds.
 
 ## Process modifier
 
@@ -154,8 +183,9 @@ and **D** (Responsibility / Recovery), which are controllable.
 
 ### Guards
 
-- The bonus across a whole tournament is **capped at +1.0**, so the raw result
-  stays the primary number.
+- The bonus across a whole tournament is **capped at +1.0 over six rounds**,
+  scaled to the actual length and snapped to quarter-points so it stays the same
+  share of any event: 4 rounds → **+0.75**, 6 → **+1.00**, 8 → **+1.25**.
 - **Byes and unrated opponents are skipped** — no bonus, no penalty.
 - A bonus can never **manufacture** a 6 / 6. The $2,000 prize requires every game
   actually won; an adjusted score that would land on the top tier is held at 5.5.
@@ -168,7 +198,9 @@ then loses three and draws one against an even field. Raw **3.0 / 6 → $5**;
 bonus **+0.75** → counts as **3.75 → snaps to 4.0 → $20**.
 
 The bonus reaches the consequence half of the table too — raw 1.5 / 6 against a
-field of 1900s earns +0.75, lands on 2.5, and the two-week break is lifted.
+field of 1900s earns +0.75, lands on 2.5, and the two-week break is lifted. Same
+in a short event: 1.5 / 4 alone is a one-week break, but +0.75 lands it on 2.5
+and the break goes away.
 
 ---
 
@@ -201,18 +233,19 @@ All tournament data lives in `localStorage`. Nothing is uploaded. Use
 
 Open `index.html` in a browser. That's the whole build step.
 
-Run the jsdom suite (**140 assertions** covering the scoring engine, both worked
+Run the jsdom suite (**201 assertions** covering the scoring engine, both worked
 examples from the spec, byes, pluralisation, prorating, every strength band and
-its boundaries, the +1.0 cap, the clean-sweep guard, and a render smoke test):
+its boundaries, the scaled bonus cap, the 4-round table, the clean-sweep guard,
+and a render smoke test):
 
 ```sh
 node test.js        # needs jsdom
 ```
 
-Run the real-browser click-through suite (**71 assertions** — first run, creating
+Run the real-browser click-through suite (**91 assertions** — first run, creating
 a tournament, entering rounds by clicking, overrides, persistence across reload,
-theme, import/export, the strength bonus end to end, and layout at three
-widths). It drives Chrome over CDP, because the extension cannot reach
+theme, import/export, the strength bonus end to end, a four-round event end to
+end, and layout at three widths). It drives Chrome over CDP, because the extension cannot reach
 `localhost` and `--headless --window-size` is ignored:
 
 ```sh

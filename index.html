@@ -415,6 +415,30 @@ const REWARD_TABLE = [
   { pts:0.0, money:0,    days:60 },
 ];
 
+/**
+ * Four-round events get their OWN table rather than a converted one. A short
+ * event is a smaller achievement, so it deliberately pays less at the same
+ * percentage — 3 / 4 and 4.5 / 6 are both 75%, but pay $10 and $40.
+ * Money is earned only above half: 2.5 and 2.0 are both neutral, so an even
+ * score neither pays nor costs. The consequences below that are one step
+ * gentler than the 6-round ladder — four games is a small sample, and one bad
+ * morning should not cost what a bad weekend does.
+ */
+const REWARD_TABLE_4 = [
+  { pts:4.0, money:100, days:0 },
+  { pts:3.5, money:20,  days:0 },
+  { pts:3.0, money:10,  days:0 },
+  { pts:2.5, money:0,   days:0 },
+  { pts:2.0, money:0,   days:0 },
+  { pts:1.5, money:0,   days:7  },
+  { pts:1.0, money:0,   days:14 },
+  { pts:0.5, money:0,   days:30 },
+  { pts:0.0, money:0,   days:42 },
+];
+
+/** Event lengths with a table of their own. Anything else is converted. */
+const REWARD_TABLES = { 4: REWARD_TABLE_4, 6: REWARD_TABLE };
+
 const PROCESS_BANDS = [
   { min:18, label:"Excellent tournament process", cls:"p18", moneyMult:1.20, consequence:"waive",
     blurb:"Outstanding habits — this is exactly the effort we're looking for." },
@@ -455,7 +479,8 @@ const STRENGTH_BANDS = [
     adj:{ W:0,    D:0,    L:0 } },
 ];
 
-/** Ceiling on the strength bonus, so the raw result always stays the main number. */
+/** Ceiling on the strength bonus over a 6-round event, so the raw result always
+ *  stays the main number. Shorter and longer events scale — see strengthCap(). */
 const STRENGTH_CAP = 1.0;
 
 /* ==========================================================================
@@ -477,6 +502,16 @@ function tournamentScore(rounds){
 /** The band a rating gap falls in. gap = opponent - player. */
 function strengthBand(gap){
   return STRENGTH_BANDS.find(b => gap >= b.min) || STRENGTH_BANDS[STRENGTH_BANDS.length - 1];
+}
+
+/**
+ * The cap is calibrated for six rounds; scale it so the bonus is the same share
+ * of any event. Snapped to quarter-points to keep every score a clean quarter.
+ *   4 rounds -> +0.75 · 5 -> +0.75 · 6 -> +1.00 · 8 -> +1.25
+ */
+function strengthCap(nRounds){
+  const n = Number(nRounds) > 0 ? Number(nRounds) : 6;
+  return Math.max(0.25, Math.round(STRENGTH_CAP * n / 6 * 4) / 4);
 }
 
 function ratingOf(v){
@@ -505,8 +540,9 @@ function strengthAdjust(rounds, myRating){
       raw += a; rated++;
     });
   }
-  const total = Math.max(-STRENGTH_CAP, Math.min(STRENGTH_CAP, raw));
-  return { per, raw: Math.round(raw * 100) / 100, total: Math.round(total * 100) / 100,
+  const cap = strengthCap(rounds.length);
+  const total = Math.max(-cap, Math.min(cap, raw));
+  return { per, cap, raw: Math.round(raw * 100) / 100, total: Math.round(total * 100) / 100,
            capped: Math.abs(raw - total) > 1e-9, rated, unrated, haveMine: !!mine };
 }
 
@@ -531,10 +567,22 @@ function endDate(startISO, days){
 
 /** Look up the base reward/consequence, converting to a 6-round equivalent. */
 function baseOutcome(pts, nRounds){
-  const eq = nRounds === 6 ? pts : (nRounds > 0 ? pts / nRounds * 6 : 0);
-  const snapped = Math.max(0, Math.min(6, Math.round(eq * 2) / 2));
+  const own = REWARD_TABLES[nRounds];
+  if (own){
+    const snapped = Math.max(0, Math.min(nRounds, Math.round(pts * 2) / 2));
+    const hit = own.find(r => r.pts === snapped) || own[own.length - 1];
+    return Object.assign({}, hit, { equivalent: snapped, scaled: false, table: nRounds,
+      // A sweep of a short event tops out at that table's best tier — the
+      // $2,000 is for winning six games, not for winning every game of four.
+      topTierBlocked: nRounds < 6 && snapped === nRounds });
+  }
+  // Every other length converts to a 6-round equivalent.
+  const eq = nRounds > 0 ? pts / nRounds * 6 : 0;
+  const raw = Math.max(0, Math.min(6, Math.round(eq * 2) / 2));
+  const blocked = nRounds < 6 && raw === 6;
+  const snapped = blocked ? 5.5 : raw;
   const hit = REWARD_TABLE.find(r => r.pts === snapped) || REWARD_TABLE[REWARD_TABLE.length - 1];
-  return Object.assign({}, hit, { equivalent: snapped, scaled: nRounds !== 6 });
+  return Object.assign({}, hit, { equivalent: snapped, scaled: true, table: 6, topTierBlocked: blocked });
 }
 
 /**
@@ -904,8 +952,10 @@ function askNewTournament(){
     '<div class="field"><label class="fl">' + whos() + ' rating at this tournament</label>' +
       '<input id="ntRating" inputmode="numeric" placeholder="e.g. 1560" value="' + esc(lastRating()) + '"></div>' +
     '<div class="xs faint" style="margin:2px 2px 12px">Used with each opponent\'s rating to adjust the score for how ' +
-      'strong the field was. Leave blank to skip the adjustment. The reward table is built for 6 rounds — other ' +
-      'lengths are converted to a 6-round equivalent before looking up the reward.</div>' +
+      'strong the field was. Leave blank to skip the adjustment.<br><br>' +
+      '<b>4- and 6-round events each have their own reward table</b> (a 4-round event pays less at the same ' +
+      'percentage — it is a smaller achievement). Other lengths convert to a 6-round equivalent. The $2,000 ' +
+      'is reserved for winning six games, so a shorter event tops out at $100.</div>' +
     '<button class="btn pri wide" id="ntGo">Create</button>'
   );
   setTimeout(() => { const i = $("#ntName"); if (i) i.focus(); }, 60);
@@ -1114,9 +1164,15 @@ function renderSummaryTab(t){
       '<div class="val">No reward, no consequence</div>' +
       '<div class="note">' + scoreFor + ' sits right in the middle of the table.</div></div>';
   }
-  if (base.scaled)
-    h += '<div class="xs faint" style="text-align:center;margin:-4px 0 12px">' + t.nRounds +
-      ' rounds → 6-round equivalent ' + base.equivalent + ' / 6 for the reward table.</div>';
+  if (base.scaled || base.topTierBlocked)
+    h += '<div class="xs faint" style="text-align:center;margin:-4px 0 12px">' +
+      (base.scaled
+        ? t.nRounds + ' rounds → 6-round equivalent ' + base.equivalent + ' / 6 for the reward table.'
+        : 'Read from the ' + t.nRounds + '-round table.') +
+      (base.topTierBlocked
+        ? '<br><b>A clean sweep of ' + t.nRounds + ' — ' + money(base.money) + ' is the top of this table. ' +
+          'The ' + money(REWARD_TABLE[0].money) + ' is reserved for winning six games.</b>'
+        : "") + '</div>';
 
   /* --- process --- */
   h += '<h2 class="sec">Process score</h2><div class="card">';
@@ -1384,7 +1440,22 @@ function renderMore(){
       const val = r.super ? money(r.money) + " 🏆" : r.money > 0 ? money(r.money)
         : r.days > 0 ? "No games for " + humanDays(r.days) : "No reward, no consequence";
       return '<tr class="' + cls + '"><td class="s">' + r.pts.toFixed(1) + '</td><td>' + val + '</td></tr>';
-    }).join("") + '</tbody></table></div>';
+    }).join("") + '</tbody></table>' +
+    '</div>';
+
+  h += '<h2 class="sec">Reward table (4 rounds)</h2><div class="card tblwrap"><table class="rt"><tbody>' +
+    REWARD_TABLE_4.map(r => {
+      const val = r.money > 0 ? money(r.money)
+        : r.days > 0 ? "No games for " + humanDays(r.days) : "No reward, no consequence";
+      return '<tr><td class="s">' + r.pts.toFixed(1) + '</td><td>' + val + '</td></tr>';
+    }).join("") + '</tbody></table>' +
+    '<div class="xs faint mt10">A four-round event has <b>its own table, not a converted one</b> — it is a ' +
+      'smaller achievement, so it pays less at the same percentage (3 / 4 and 4.5 / 6 are both 75%, and pay ' +
+      '$10 and $40). Money starts above half — 2.5 and 2.0 are both neutral. The consequences below that are ' +
+      'one step gentler than the six-round ladder, because four games is a small sample. A clean 4 / 4 pays ' +
+      '$100; the $2,000 needs six games actually won.' +
+      '<br><br>Lengths other than 4 and 6 convert to a 6-round equivalent (<b>score ÷ rounds × 6</b>, snapped ' +
+      'to the nearest 0.5), and still cannot reach the $2,000 unless the event is at least six rounds.</div></div>';
 
   h += '<h2 class="sec">Process modifier</h2><div class="card">' +
     PROCESS_BANDS.map(b => {
@@ -1412,9 +1483,11 @@ function renderMore(){
       return '<div class="kv"><span class="k">' + b.label + ' &nbsp;<span class="faint">' + rng + '</span></span>' +
         '<span class="v xs ' + b.cls + '">' + eff + '</span></div>';
     }).join("") +
-    '<div class="xs faint mt10">The bonus across a whole tournament is capped at +' + STRENGTH_CAP +
-      ', so the raw result stays the main number. Byes and unrated opponents are skipped. ' +
-      'A bonus can never create a ' + '6 / 6' + ' — the perfect-score prize needs every game actually won.</div></div>';
+    '<div class="xs faint mt10">The bonus across a whole tournament is capped at <b>+' + STRENGTH_CAP +
+      ' over six rounds</b>, scaled to the actual length (4 rounds → +' + strengthCap(4) + ', 8 → +' + strengthCap(8) +
+      '), so it stays the same share of any event and the raw result stays the main number. ' +
+      'Byes and unrated opponents are skipped. A bonus can never create a perfect score — that prize needs ' +
+      'every one of six games actually won.</div></div>';
 
   h += '<h2 class="sec">How a category score is suggested</h2><div class="card small muted" style="line-height:1.6">' +
     'Each round mark earns credit: <b>✓ Met 1.0</b> · <b>★ Recovered 1.25</b> · <b>△ Partly 0.5</b> · <b>✗ Not yet 0</b>. ' +
@@ -1567,8 +1640,9 @@ go("home");
 if (!DB.player) setTimeout(function(){ askPlayerName(true); }, 350);
 
 /* expose the pure engine for tests */
-window.CHESS = { CATS, MARKS, REWARD_TABLE, PROCESS_BANDS, STRENGTH_BANDS, STRENGTH_CAP,
-  tournamentScore, strengthBand, strengthAdjust, ratingOf, baseOutcome,
+window.CHESS = { CATS, MARKS, REWARD_TABLE, REWARD_TABLE_4, REWARD_TABLES, PROCESS_BANDS,
+  STRENGTH_BANDS, STRENGTH_CAP,
+  tournamentScore, strengthBand, strengthCap, strengthAdjust, ratingOf, baseOutcome,
   suggestScore, processScore, finalOutcome, evaluate, humanDays, highlights, summaryText,
   plural, recordLine, endDate, signed, strengthLine, strengthSummaryLine, lastRating, whosLow,
   who, whos, whoOr, askPlayerName,

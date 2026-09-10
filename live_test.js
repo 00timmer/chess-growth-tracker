@@ -135,7 +135,10 @@ const URL_=process.argv[2];
   tt('sparkline bars', await ev(`document.querySelectorAll('.spark i').length>0`));
   await ev(`(document.querySelector('[data-nav="more"]').click(),1)`); await new Promise(r=>setTimeout(r,400));
   t('more view', await ev(`window.CHESS._ui().view`), 'more');
-  t('reward table rows', await ev(`document.querySelectorAll('table.rt tr').length`), 13);
+  t('two reward tables (6-round + 4-round)', await ev(`document.querySelectorAll('table.rt').length`), 2);
+  t('6-round table rows', await ev(`document.querySelectorAll('table.rt')[0].querySelectorAll('tr').length`), 13);
+  t('4-round table rows', await ev(`document.querySelectorAll('table.rt')[1].querySelectorAll('tr').length`), 9);
+  t('4-round table tops out at $100', await ev(`document.querySelectorAll('table.rt')[1].querySelector('tr td:last-child').textContent`), '$100');
   tt('shows tracked name', await ev(`document.body.innerText.indexOf('Robin')>-1`));
   tt('super row highlighted', await ev(`!!document.querySelector('table.rt tr.hi')`));
 
@@ -211,7 +214,59 @@ const URL_=process.argv[2];
   tt('More documents the bonus table', /Opponent strength bonus/.test(moreTxt));
   tt('More says playing down is free', /never costs anything/.test(moreTxt));
 
-  console.log('\n[13] LAYOUT + ERRORS');
+  console.log('\n[13] FOUR-ROUND EVENT (real clicks)');
+  await ev(`(window.CHESS._db().tournaments.length=0,window.CHESS._go('home'),1)`);
+  await new Promise(r=>setTimeout(r,250));
+  await ev(`(document.querySelector('#newT').click(),1)`);
+  await new Promise(r=>setTimeout(r,250));
+  await ev(`(document.querySelector('#ntName').value='Saturday Quad',document.querySelector('#ntDate').value='2026-09-10',document.querySelector('#ntRounds').value='4',document.querySelector('#ntRating').value='1560',document.querySelector('#ntGo').click(),1)`);
+  await new Promise(r=>setTimeout(r,350));
+  t('4 rounds created', await ev(`window.CHESS._db().tournaments[0].rounds.length`), 4);
+  t('4 round rows on screen', await ev(`document.querySelectorAll('[data-r]').length`), 4);
+  tt('header says 4 rounds', /4 rounds/.test(await ev(`document.querySelector('#hSub').textContent`)));
+
+  // sweep all four
+  for (let i=0;i<4;i++){
+    await ev(`(window.CHESS._go('round',{rIdx:${i}}),1)`); await new Promise(r=>setTimeout(r,260));
+    await ev(`(document.querySelector('[data-res="W"]').click(),1)`); await new Promise(r=>setTimeout(r,220));
+  }
+  const four = await ev(`(function(){var t=window.CHESS._db().tournaments[0],e=window.CHESS.evaluate(t);
+    return {raw:e.ts.pts,eq:e.base.equivalent,money:e.fin.money,sup:e.fin.isSuper,blocked:e.base.topTierBlocked}})()`);
+  t('4/4 raw', four.raw, 4);
+  t('4/4 read from the 4-round table', four.eq, 4);
+  t('4/4 pays $100, NOT $2,000', four.money, 100);
+  t('4/4 is not the perfect-score tier', four.sup, false);
+  t('4/4 flagged as top-tier blocked', four.blocked, true);
+
+  await ev(`(window.CHESS._go('tour',{tab:'summary'}),1)`); await new Promise(r=>setTimeout(r,400));
+  const fourTxt = await ev(`document.querySelector('#tourBody').textContent`);
+  tt('summary says which table was read', /Read from the 4-round table/.test(fourTxt));
+  tt('summary explains the reserved prize', /reserved for winning six games/.test(fourTxt));
+  // the $2,000 is named only to explain why this sweep does not get it
+  t('the reward actually paid is $100', await ev(`document.querySelector('#tourBody .reward .val').textContent`), '$100');
+  tt('the reward block is not the super tier', await ev(`!document.querySelector('#tourBody .reward').classList.contains('super')`));
+
+  // walk the 4-round table back down by changing results
+  for (const [res, want] of [['D', 20], ['L', 10]]){
+    await ev(`(window.CHESS._go('round',{rIdx:3}),1)`); await new Promise(r=>setTimeout(r,260));
+    await ev(`(document.querySelector('[data-res="${res}"]').click(),1)`); await new Promise(r=>setTimeout(r,240));
+    const m = await ev(`window.CHESS.evaluate(window.CHESS._db().tournaments[0]).fin.money`);
+    t('3 wins + 1 ' + res + ' -> $' + want, m, want);
+  }
+
+  await ev(`(window.CHESS._go('more'),1)`); await new Promise(r=>setTimeout(r,350));
+  const moreTxt4 = await ev(`document.querySelector('#moreBody').textContent`);
+  tt('More shows a 4-round reward table', /Reward table \(4 rounds\)/.test(moreTxt4));
+  tt('More explains it is not a conversion', /its own table, not a converted one/.test(moreTxt4));
+
+  // a real 6-round sweep still wins the big one
+  await ev(`(function(){var t=window.CHESS.newTournament('Six','2026-09-10',6);
+    t.rounds.forEach(function(r){r.result='W'});window.CHESS._db().tournaments.push(t);
+    window.CHESS._go('tour',{tId:t.id,tab:'summary'});return 1})()`);
+  await new Promise(r=>setTimeout(r,400));
+  tt('a genuine 6/6 still pays $2,000', /\$2,000/.test(await ev(`document.querySelector('#tourBody').textContent`)));
+
+  console.log('\n[14] LAYOUT + ERRORS');
   for (const w of [320,390,430]){
     await send('Emulation.setDeviceMetricsOverride',{width:w,height:844,deviceScaleFactor:2,mobile:true});
     await ev(`(window.CHESS._go('round',{rIdx:0}),1)`); await new Promise(r=>setTimeout(r,350));

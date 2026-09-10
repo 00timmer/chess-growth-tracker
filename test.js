@@ -286,6 +286,108 @@ const moreHTML=d.querySelector('#moreBody').innerHTML;
 eq('More explains the strength bonus', /Opponent strength bonus/.test(moreHTML), true);
 eq('More states playing down is free', /never costs anything/.test(moreHTML), true);
 
+console.log('--- NEW: four-round events have their own table ---');
+const FOUR = [[4,100],[3.5,20],[3,10]];
+FOUR.forEach(([p,m])=>eq(p+'/4 -> $'+m, C.baseOutcome(p,4).money, m));
+eq('2.5/4 -> no reward, no consequence', [C.baseOutcome(2.5,4).money,C.baseOutcome(2.5,4).days], [0,0]);
+eq('2.0/4 -> no reward, no consequence', [C.baseOutcome(2,4).money,C.baseOutcome(2,4).days], [0,0]);
+eq('an even 4-round score neither pays nor costs', C.baseOutcome(2,4).kind, undefined);
+eq('1.5/4 -> 7 days', C.baseOutcome(1.5,4).days, 7);
+eq('1.0/4 -> 14 days', C.baseOutcome(1,4).days, 14);
+eq('0.5/4 -> 30 days', C.baseOutcome(0.5,4).days, 30);
+eq('0.0/4 -> 42 days', C.baseOutcome(0,4).days, 42);
+eq('4-round consequences are gentler than 6-round', [C.baseOutcome(0,4).days,C.baseOutcome(0,6).days], [42,60]);
+
+// it is a table, not a conversion
+eq('4-round is not flagged scaled', C.baseOutcome(3,4).scaled, false);
+eq('4-round reports its own table', C.baseOutcome(3,4).table, 4);
+eq('4-round equivalent is the 4-round score', C.baseOutcome(3,4).equivalent, 3);
+eq('same percentage pays less than 6 rounds', [C.baseOutcome(3,4).money,C.baseOutcome(4.5,6).money], [10,40]);
+eq('scores snap to the nearest 0.5', C.baseOutcome(2.75,4).money, 10);
+eq('over-max clamps', C.baseOutcome(9,4).money, 100);
+eq('negative clamps', C.baseOutcome(-2,4).days, 42);
+
+// the $2,000 needs six games
+eq('4/4 is not the super tier', !!C.baseOutcome(4,4).super, false);
+eq('4/4 pays $100', C.baseOutcome(4,4).money, 100);
+eq('4/4 flagged as top-tier blocked', C.baseOutcome(4,4).topTierBlocked, true);
+eq('3.5/4 not flagged blocked', C.baseOutcome(3.5,4).topTierBlocked, false);
+eq('6/6 still $2000', C.baseOutcome(6,6).money, 2000);
+eq('6/6 not flagged blocked', C.baseOutcome(6,6).topTierBlocked, false);
+eq('7/7 still $2000 (harder than six)', C.baseOutcome(7,7).money, 2000);
+
+// lengths without a table of their own still convert, and still cannot reach the top
+eq('5-round converts', C.baseOutcome(3.5,5).scaled, true);
+eq('5/5 sweep blocked at $150', C.baseOutcome(5,5).money, 150);
+eq('3/3 sweep blocked at $150', C.baseOutcome(3,3).money, 150);
+eq('5-round 3.5 -> eq 4.0 -> $20', [C.baseOutcome(3.5,5).equivalent,C.baseOutcome(3.5,5).money], [4,20]);
+eq('8/8 sweep still $2000', C.baseOutcome(8,8).money, 2000);
+
+// a 4-round tournament end to end
+const tFour=C.newTournament('Four','2026-09-10',4);
+eq('4 rounds created', tFour.rounds.length, 4);
+tFour.rounds.forEach(r=>{r.result='W';r.proc={A:'met',B:'met',C:'met',D:'met',E:'met'}});
+const e4=C.evaluate(tFour);
+eq('4/4 raw', e4.ts.pts, 4);
+eq('4/4 record line', C.recordLine(e4.ts), '4 wins · 0 draws · 0 losses');
+eq('4/4 is not the perfect-score prize', e4.fin.isSuper, false);
+eq('4/4 + perfect process = $120', e4.fin.money, 120);
+eq('  (100 base, +20% for excellent process)', [e4.fin.baseMoney,e4.fin.bonusPct], [100,20]);
+// process still waives a 4-round consequence
+const tFourBad=C.newTournament('FourBad','2026-09-10',4);
+['L','L','D','L'].forEach((r,i)=>{tFourBad.rounds[i].result=r;
+  tFourBad.rounds[i].proc={A:'met',B:'met',C:'met',D:'star',E:'met'}});
+const e4b2=C.evaluate(tFourBad);
+eq('0.5/4 would be 30 days', C.baseOutcome(0.5,4).days, 30);
+eq('excellent process waives it', [e4b2.fin.kind,e4b2.fin.days], ['waived',0]);
+
+console.log('--- NEW: strength cap scales with event length ---');
+eq('4 rounds -> cap +0.75', C.strengthCap(4), 0.75);
+eq('5 rounds -> cap +0.75', C.strengthCap(5), 0.75);
+eq('6 rounds -> cap +1.00', C.strengthCap(6), 1);
+eq('8 rounds -> cap +1.25', C.strengthCap(8), 1.25);
+eq('12 rounds -> cap +2.00', C.strengthCap(12), 2);
+eq('1 round -> floor at +0.25', C.strengthCap(1), 0.25);
+eq('junk -> treated as 6', C.strengthCap(undefined), 1);
+eq('cap stays a clean quarter', [C.strengthCap(4)*4%1,C.strengthCap(8)*4%1], [0,0]);
+
+const t4s=C.newTournament('FourStrong','2026-09-10',4);
+t4s.myRating='1200';
+t4s.rounds.forEach(r=>{r.result='W';r.oppRating='1900';});
+const e4s=C.evaluate(t4s);
+eq('4-round: earned +2.0', e4s.str.raw, 2);
+eq('4-round: capped to +0.75 not +1.0', e4s.str.total, 0.75);
+eq('4-round: cap reported', e4s.str.cap, 0.75);
+eq('4-round: flagged capped', e4s.str.capped, true);
+eq('bonus still cannot reach the top tier', e4s.fin.isSuper, false);
+
+// same share of the event whatever the length
+const share=n=>{const t=C.newTournament('S','2026-09-10',n);t.myRating='1200';
+  t.rounds.forEach(r=>{r.result='W';r.oppRating='1900'});
+  return Math.round(C.evaluate(t).str.total/n*1000)/10;};
+eq('bonus share 6 rounds', share(6), 16.7);
+eq('bonus share 4 rounds is close to it', share(4), 18.8);
+eq('bonus share 8 rounds is close to it', share(8), 15.6);
+
+// a realistic 4-round event with a bonus that matters
+const t4b=C.newTournament('FourReal','2026-09-10',4);
+t4b.myRating='1560';
+[['W','1850'],['D','1840'],['L','1600'],['L','1620']]
+  .forEach(([res,rat],i)=>{t4b.rounds[i].result=res;t4b.rounds[i].oppRating=rat;});
+const e4b=C.evaluate(t4b);
+eq('raw 1.5/4, bonus +0.75', [e4b.ts.pts,e4b.str.total], [1.5,0.75]);
+eq('counts as 2.25/4 -> snaps 2.5', [e4b.adjPts,e4b.base.equivalent], [2.25,2.5]);
+// the bonus lifts a short event out of the consequence zone into neutral
+eq('raw 1.5/4 alone would be a 1-week break', [C.baseOutcome(1.5,4).money,C.baseOutcome(1.5,4).days], [0,7]);
+eq('with the bonus there is no break', [e4b.fin.money,e4b.fin.days], [0,0]);
+
+// the More screen documents both rules
+C._go('more');
+const moreShort=d.querySelector('#moreBody').innerHTML;
+eq('More explains the round conversion', /6-round equivalent/.test(moreShort), true);
+eq('More says short events cannot reach $2,000', /needs six games actually won/.test(moreShort), true);
+eq('More says the cap scales', /scaled to the actual length/.test(moreShort), true);
+
 console.log('\n=== '+pass+' passed, '+fail+' failed ===');
 if(errs.length){console.log('JS ERRORS:'); errs.forEach(e=>console.log('  '+e));}
 process.exit(fail?1:0);
