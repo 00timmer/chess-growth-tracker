@@ -37,7 +37,7 @@ console.log('--- humanDays ---');
 [[7,'1 week'],[14,'2 weeks'],[30,'1 month'],[42,'6 weeks'],[60,'2 months'],[4,'4 days'],[15,'15 days'],[21,'3 weeks']]
   .forEach(([d,s])=>eq('humanDays '+d, C.humanDays(d), s));
 
-console.log('--- SPEC EXAMPLE 1: 4.0/6 + process 17 -> $22 ---');
+console.log('--- SPEC EXAMPLE 1: 4.0/6 + process 17 -> $30 (was $22 under the old +10%) ---');
 const t1=C.newTournament('T1','2026-09-01',6);
 ['W','W','W','W','L','L'].forEach((r,i)=>t1.rounds[i].result=r);
 t1.overrides={A:{score:4},B:{score:3},C:{score:3},D:{score:4},E:{score:3}};
@@ -51,8 +51,8 @@ eq('spec literal record 3W1D2L = 3.5 pts', C.tournamentScore(tSpec.rounds).pts, 
 eq('base $20', e1.base.money, 20);
 eq('process 17/20', e1.proc.total, 17);
 eq('band Strong process', e1.proc.band.label, 'Strong process');
-eq('bonus +10%', e1.fin.bonusPct, 10);
-eq('FINAL $22', e1.fin.money, 22);
+eq('flat effort bonus $10', e1.fin.processBonus, 10);
+eq('FINAL $30 (20 base + 10 effort)', e1.fin.money, 30);
 
 console.log('--- SPEC EXAMPLE 2: 2.0/6 + process 19 -> waived ---');
 const t2=C.newTournament('T2','2026-09-01',6);
@@ -103,7 +103,7 @@ eq('weakest first', h6.next[0].includes('opponent threatening'), true);
 
 console.log('--- summary text renders ---');
 const st=C.summaryText(t1,e1);
-eq('has FINAL reward line', /Reward: \$22/.test(st), true);
+eq('has FINAL reward line', /Reward: \$30 {2}\(base \$20 \+ \$10 effort bonus\)/.test(st), true);
 
 console.log('--- UI smoke: render every view ---');
 const d=w.document;
@@ -153,12 +153,12 @@ tp.rounds.forEach(r=>{r.result='W';r.proc={A:'met',B:'met',C:'met',D:'met',E:'me
 const ep=C.evaluate(tp);
 eq('perfect process 20/20', ep.proc.total, 20);
 eq('6/6 stays $2000', ep.fin.money, 2000);
-eq('no bonus badge on 6/6', ep.fin.bonusPct, 0);
+eq('nothing stacks on the perfect score', ep.fin.processBonus, 0);
 const t55=C.newTournament('FiveHalf','2026-09-01',6);
 ['W','W','W','W','W','D'].forEach((r,i)=>{t55.rounds[i].result=r;t55.rounds[i].proc={A:'met',B:'met',C:'met',D:'met',E:'met'}});
 const e55=C.evaluate(t55);
-eq('5.5/6 still bonuses to $180', e55.fin.money, 180);
-eq('bonus badge shown', e55.fin.bonusPct, 20);
+eq('5.5/6 -> $150 + $25 effort = $175', e55.fin.money, 175);
+eq('effort bonus shown', e55.fin.processBonus, 25);
 
 console.log('--- NEW: opponent strength bonus ---');
 // band boundaries (gap = opponent - player)
@@ -331,8 +331,8 @@ const e4=C.evaluate(tFour);
 eq('4/4 raw', e4.ts.pts, 4);
 eq('4/4 record line', C.recordLine(e4.ts), '4 wins · 0 draws · 0 losses');
 eq('4/4 is not the perfect-score prize', e4.fin.isSuper, false);
-eq('4/4 + perfect process = $120', e4.fin.money, 120);
-eq('  (100 base, +20% for excellent process)', [e4.fin.baseMoney,e4.fin.bonusPct], [100,20]);
+eq('4/4 + perfect process = $100 + $15 = $115', e4.fin.money, 115);
+eq('  (100 base + $15 effort bonus, 4-round rate)', [e4.fin.baseMoney,e4.fin.processBonus], [100,15]);
 // process still waives a 4-round consequence
 const tFourBad=C.newTournament('FourBad','2026-09-10',4);
 ['L','L','D','L'].forEach((r,i)=>{tFourBad.rounds[i].result=r;
@@ -387,6 +387,66 @@ const moreShort=d.querySelector('#moreBody').innerHTML;
 eq('More explains the round conversion', /6-round equivalent/.test(moreShort), true);
 eq('More says short events cannot reach $2,000', /needs six games actually won/.test(moreShort), true);
 eq('More says the cap scales', /scaled to the actual length/.test(moreShort), true);
+
+console.log('--- NEW: process pays a flat bonus, not a percentage ---');
+const P=(pts,n,proc)=>{const b=C.baseOutcome(pts,n);
+  return C.finalOutcome(b,{total:proc,band:C.PROCESS_BANDS.find(x=>proc>=x.min)})};
+
+// the point of the change: effort is worth the same at every result level
+eq('3.0/6 + process 19 -> $5 + $25', P(3,6,19).money, 30);
+eq('4.0/6 + process 19 -> $20 + $25', P(4,6,19).money, 45);
+eq('5.0/6 + process 19 -> $75 + $25', P(5,6,19).money, 100);
+eq('effort is worth $25 at every level', [P(3,6,19).money-P(3,6,13).money,
+  P(4,6,19).money-P(4,6,13).money, P(5,6,19).money-P(5,6,13).money], [25,25,25]);
+eq('strong process is worth $10 at every level', [P(3,6,16).money-P(3,6,13).money,
+  P(4,6,16).money-P(4,6,13).money, P(5,6,16).money-P(5,6,13).money], [10,10,10]);
+
+// a weak process still never takes money away
+[13,10,3,0].forEach(q=>eq('process '+q+' pays the base only', P(4,6,q).money, 20));
+eq('a weak process never goes negative', P(3,6,0).money >= C.baseOutcome(3,6).money, true);
+
+// the neutral tier now pays for effort, where it used to pay nothing
+eq('2.5/6 + process 19 -> $25 (was $0)', P(2.5,6,19).money, 25);
+eq('2.5/6 + process 19 is a money outcome', P(2.5,6,19).kind, 'money');
+eq('2.5/6 + process 13 -> still nothing', [P(2.5,6,13).money,P(2.5,6,13).kind], [0,'neutral']);
+
+// a hard-fought loss finally pays: break waived AND bonus
+eq('2.0/6 + process 19 -> break waived', [P(2,6,19).days,P(2,6,19).waived], [0,true]);
+eq('2.0/6 + process 19 -> $25 paid too', P(2,6,19).money, 25);
+eq('  and still reads as waived', P(2,6,19).kind, 'waived');
+eq('0.0/6 + process 19 -> waived + $25', [P(0,6,19).days,P(0,6,19).money], [0,25]);
+
+// effort buys off the break FIRST -- no money while games are still taken away
+eq('2.0/6 + process 16 -> break halved, not waived', [P(2,6,16).days,P(2,6,16).halved], [4,true]);
+eq('  no money while a break remains', P(2,6,16).money, 0);
+eq('  and it reads as a hold', P(2,6,16).kind, 'hold');
+eq('1.0/6 + process 16 -> 15 days, no money', [P(1,6,16).days,P(1,6,16).money], [15,0]);
+// but strong process pays once the result clears the break zone
+eq('2.5/6 + process 16 -> $10, no break', [P(2.5,6,16).money,P(2.5,6,16).days], [10,0]);
+
+// nothing stacks on the perfect score
+eq('6/6 + process 20 stays $2000', P(6,6,20).money, 2000);
+eq('6/6 pays no effort bonus', P(6,6,20).processBonus, 0);
+eq('5.5/6 does get one', P(5.5,6,20).processBonus, 25);
+
+// four-round events use the smaller rate
+eq('4-round excellent = $15', P(3,4,19).processBonus, 15);
+eq('4-round strong = $6', P(3,4,16).processBonus, 6);
+eq('6-round excellent = $25', P(3,6,19).processBonus, 25);
+eq('3.0/4 + process 19 -> $10 + $15', P(3,4,19).money, 25);
+eq('2.5/4 (neutral) + process 19 -> $15', P(2.5,4,19).money, 15);
+eq('converted lengths use the 6-round rate', P(3.5,5,19).processBonus, 25);
+
+// unscored process changes nothing
+const noProc=C.finalOutcome(C.baseOutcome(4,6),{total:null,band:null});
+eq('no process marks -> base only', [noProc.money,noProc.processBonus], [20,0]);
+
+// the More screen documents it
+C._go('more');
+const moreFlat=d.querySelector('#moreBody').innerHTML;
+eq('More shows the flat amounts', /\+\$25 \(\$15 over 4 rounds\)/.test(moreFlat), true);
+eq('More explains flat not percentage', /flat amount, not a percentage/.test(moreFlat), true);
+eq('More explains break-first', /Effort buys off a break/.test(moreFlat), true);
 
 console.log('\n=== '+pass+' passed, '+fail+' failed ===');
 if(errs.length){console.log('JS ERRORS:'); errs.forEach(e=>console.log('  '+e));}

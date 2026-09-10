@@ -100,7 +100,7 @@ const URL_=process.argv[2];
     total:(document.body.innerText.match(/(\\d+(\\.\\d+)?) \\/ 20/)||[])[0]})`);
   console.log('    summary =', JSON.stringify(sum));
   t('score 3.0 (2W 1D 2L + half-point bye)', sum.score, '3');
-  t('reward = $5 base +20% = $6', sum.reward, '$6');
+  t('reward = $5 base + $25 effort bonus = $30', sum.reward, '$30');
   tt('record pluralised correctly', /1 draw\b/.test(sum.rec) && /1 bye\b/.test(sum.rec));
   tt('reward is a dollar figure', /^\$/.test(sum.reward));
   tt('no provisional banner (all rounds filled)', await ev(`document.body.innerText.indexOf('Provisional')===-1`));
@@ -266,7 +266,38 @@ const URL_=process.argv[2];
   await new Promise(r=>setTimeout(r,400));
   tt('a genuine 6/6 still pays $2,000', /\$2,000/.test(await ev(`document.querySelector('#tourBody').textContent`)));
 
-  console.log('\n[14] LAYOUT + ERRORS');
+  console.log('\n[14] EFFORT BONUS ON A LOSING TOURNAMENT');
+  // 2.0/6 with excellent process: used to pay $0, only "not punished". Now pays.
+  await ev(`(function(){var C=window.CHESS,t=C.newTournament('Hard Weekend','2026-09-10',6);
+    ['L','L','D','L','D','L'].forEach(function(r,i){t.rounds[i].result=r;
+      t.rounds[i].proc={A:'met',B:'met',C:'met',D:'star',E:'met'}});
+    C._db().tournaments.push(t); C._go('tour',{tId:t.id,tab:'summary'}); return 1})()`);
+  await new Promise(r=>setTimeout(r,450));
+  const hard = await ev(`(function(){var t=window.CHESS._db().tournaments.slice(-1)[0],e=window.CHESS.evaluate(t);
+    return {raw:e.ts.pts,proc:e.proc.total,money:e.fin.money,days:e.fin.days,kind:e.fin.kind,bonus:e.fin.processBonus}})()`);
+  t('raw 1.0/6 with a 20/20 process', [hard.raw,hard.proc], [1,20]);
+  t('break waived', [hard.days,hard.kind], [0,'waived']);
+  t('and $25 actually paid (used to be $0)', [hard.money,hard.bonus], [25,25]);
+  const hardTxt = await ev(`document.querySelector('#tourBody').textContent`);
+  tt('summary shows the money', /\$25/.test(hardTxt));
+  tt('summary still shows the waiver', /waived/.test(hardTxt));
+  tt('summary strikes through the old break', await ev(`!!document.querySelector('#tourBody .strike')`));
+
+  // a break that only gets halved must NOT also pay money
+  await ev(`(function(){var C=window.CHESS,t=C.newTournament('Halved','2026-09-10',6);
+    ['L','L','D','L','D','L'].forEach(function(r,i){t.rounds[i].result=r;
+      t.rounds[i].proc={A:'met',B:'met',C:'met',D:'partial',E:'partial'}});
+    C._db().tournaments.push(t); C._go('tour',{tId:t.id,tab:'summary'}); return 1})()`);
+  await new Promise(r=>setTimeout(r,450));
+  const halved = await ev(`(function(){var t=window.CHESS._db().tournaments.slice(-1)[0],e=window.CHESS.evaluate(t);
+    return {proc:e.proc.total,money:e.fin.money,days:e.fin.days,kind:e.fin.kind}})()`);
+  tt('process lands in the 15-17 band', halved.proc >= 15 && halved.proc <= 17);
+  t('break is halved, not waived', halved.kind, 'hold');
+  t('no money while a break remains', halved.money, 0);
+  tt('summary says the credit went into the break', /went into shortening the break/.test(
+    await ev(`document.querySelector('#tourBody').textContent`)));
+
+  console.log('\n[15] LAYOUT + ERRORS');
   for (const w of [320,390,430]){
     await send('Emulation.setDeviceMetricsOverride',{width:w,height:844,deviceScaleFactor:2,mobile:true});
     await ev(`(window.CHESS._go('round',{rIdx:0}),1)`); await new Promise(r=>setTimeout(r,350));

@@ -126,16 +126,49 @@ cannot reach the $2,000 unless the event is at least six rounds.
 
 | Process | Label | Effect |
 |---|---|---|
-| 18–20 | Excellent tournament process | +20% reward · **consequence waived entirely** |
-| 15–17 | Strong process | +10% reward · consequence halved |
+| 18–20 | Excellent tournament process | **+$25** (+$15 over 4 rounds) · **consequence waived entirely** |
+| 15–17 | Strong process | **+$10** (+$6 over 4 rounds) · consequence halved |
 | 12–14 | Developing / acceptable | Normal result rule |
 | 9–11 | Needs improvement | Normal result rule + focus areas highlighted |
 | 0–8 | Significant improvement needed | Normal result rule + focus areas highlighted |
 
-A weak process **never adds** punishment. It only removes the discount.
+A weak process **never adds** punishment. It only removes the bonus.
 
-**Worked example:** 2.0 / 6 → base consequence "no games for 1 week". Process
-19 / 20 → **waived**, because the effort, responsibility and habits were there.
+### Why the effort bonus is flat, not a percentage
+
+It used to be +20% / +10%. That made effort almost worthless where the player
+actually lives: at a realistic 3.0 / 6, going from careless (8/20) to
+near-perfect (19/20) habits moved the reward from **$5 to $6**. One dollar. At
+4.0 / 6 it was four dollars. Meanwhile the result swung the payout from $0 to
+$2,000 — so roughly **99% of the money was set by the axis the player does not
+fully control**, which is the exact opposite of what this app is for.
+
+A percentage of a small reward is worth nothing. A flat amount is worth the same
+at every result level:
+
+| Result | Careless (13/20) | Excellent (19/20) |
+|---|---|---|
+| 5.0 / 6 | $75 | **$100** |
+| 4.0 / 6 | $20 | **$45** |
+| 3.0 / 6 | $5 | **$30** |
+| 2.5 / 6 | $0 | **$25** |
+
+### Effort buys off the break first
+
+If a break still remains after the modifier, the effort credit went into
+**shortening it** rather than into cash — the app will not hand over money while
+also taking chess away. Once no break remains, the bonus is paid.
+
+- **18–20** waives the break entirely → the bonus **is** paid.
+- **15–17** halves a break → no cash that time; but with no break to buy off
+  (result 2.5 and up) the $10 is paid normally.
+
+Nothing stacks on the $2,000 perfect score.
+
+**Worked example:** 1.0 / 6 → base consequence "no games for 1 month". Process
+20 / 20 → break **waived** *and* **$25 paid**. Previously this paid nothing at
+all: the single behaviour the app exists to encourage was rewarded only by the
+absence of punishment.
 
 ---
 
@@ -233,7 +266,7 @@ All tournament data lives in `localStorage`. Nothing is uploaded. Use
 
 Open `index.html` in a browser. That's the whole build step.
 
-Run the jsdom suite (**201 assertions** covering the scoring engine, both worked
+Run the jsdom suite (**236 assertions** covering the scoring engine, both worked
 examples from the spec, byes, pluralisation, prorating, every strength band and
 its boundaries, the scaled bonus cap, the 4-round table, the clean-sweep guard,
 and a render smoke test):
@@ -242,10 +275,10 @@ and a render smoke test):
 node test.js        # needs jsdom
 ```
 
-Run the real-browser click-through suite (**91 assertions** — first run, creating
+Run the real-browser click-through suite (**101 assertions** — first run, creating
 a tournament, entering rounds by clicking, overrides, persistence across reload,
 theme, import/export, the strength bonus end to end, a four-round event end to
-end, and layout at three widths). It drives Chrome over CDP, because the extension cannot reach
+end, the effort bonus on a losing tournament, and layout at three widths). It drives Chrome over CDP, because the extension cannot reach
 `localhost` and `--headless --window-size` is ignored:
 
 ```sh

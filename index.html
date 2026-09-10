@@ -439,16 +439,24 @@ const REWARD_TABLE_4 = [
 /** Event lengths with a table of their own. Anything else is converted. */
 const REWARD_TABLES = { 4: REWARD_TABLE_4, 6: REWARD_TABLE };
 
+/**
+ * Process pays a FLAT amount, not a percentage. A percentage of a small reward
+ * is worth nothing — at a realistic 3.0 / 6 the old +20% moved the money by one
+ * dollar, so the axis the player actually controls barely touched the payout
+ * while the result swung it from $0 to $2,000. A flat bonus is worth the same
+ * at every result level, and finally pays something for a hard-fought loss.
+ * `flat` is keyed by reward table: a 4-round event is a smaller event.
+ */
 const PROCESS_BANDS = [
-  { min:18, label:"Excellent tournament process", cls:"p18", moneyMult:1.20, consequence:"waive",
+  { min:18, label:"Excellent tournament process", cls:"p18", flat:{ 6:25, 4:15 }, consequence:"waive",
     blurb:"Outstanding habits — this is exactly the effort we're looking for." },
-  { min:15, label:"Strong process", cls:"p15", moneyMult:1.10, consequence:"half",
+  { min:15, label:"Strong process", cls:"p15", flat:{ 6:10, 4:6 }, consequence:"half",
     blurb:"Strong tournament habits, with a little room to sharpen." },
-  { min:12, label:"Developing / acceptable", cls:"p12", moneyMult:1.00, consequence:"normal",
+  { min:12, label:"Developing / acceptable", cls:"p12", flat:null, consequence:"normal",
     blurb:"Solid foundation. Pick one habit to push forward next time." },
-  { min:9,  label:"Needs improvement", cls:"p9", moneyMult:1.00, consequence:"normal",
+  { min:9,  label:"Needs improvement", cls:"p9", flat:null, consequence:"normal",
     blurb:"The habits below are the fastest way to improve results." },
-  { min:0,  label:"Significant improvement needed", cls:"p0", moneyMult:1.00, consequence:"normal",
+  { min:0,  label:"Significant improvement needed", cls:"p0", flat:null, consequence:"normal",
     blurb:"Let's rebuild the basics one round at a time — start with the focus areas below." },
 ];
 
@@ -644,20 +652,27 @@ function finalOutcome(base, proc){
     kind: base.days > 0 ? "hold" : (base.money > 0 ? "money" : "neutral"),
     baseMoney: base.money, baseDays: base.days, isSuper: !!base.super,
     money: base.money, days: base.days,
-    bonusPct: 0, waived:false, halved:false,
+    processBonus: 0, waived:false, halved:false,
     band: proc && proc.band ? proc.band : null,
   };
   if (!proc || proc.total === null) return out;
   const b = proc.band;
-  // The perfect-score prize is a fixed headline number — the bonus does not stack on top of it.
-  if (base.money > 0 && b.moneyMult !== 1 && !base.super){
-    out.bonusPct = Math.round((b.moneyMult - 1) * 100);
-    out.money = Math.round(base.money * b.moneyMult);
-  }
   if (base.days > 0){
-    if (b.consequence === "waive"){ out.days = 0; out.waived = true; out.kind = "waived"; }
+    if (b.consequence === "waive"){ out.days = 0; out.waived = true; }
     else if (b.consequence === "half"){ out.days = Math.max(1, Math.round(base.days / 2)); out.halved = true; }
   }
+  // Effort buys off the break FIRST. Only once no break remains does it pay
+  // cash — otherwise the app would hand over money while also taking chess
+  // away, which is a mixed message. The perfect-score prize is a fixed
+  // headline number, so nothing stacks on top of it.
+  const flat = b.flat ? (b.flat[base.table] || b.flat[6] || 0) : 0;
+  if (flat && out.days === 0 && !base.super){
+    out.processBonus = flat;
+    out.money = base.money + flat;
+  }
+  out.kind = out.days > 0 ? "hold"
+    : out.waived ? "waived"
+    : out.money > 0 ? "money" : "neutral";
   return out;
 }
 
@@ -1130,8 +1145,8 @@ function renderSummaryTab(t){
       '<div class="xs faint mt10">' + strengthSummaryLine(t, str) + '</div></div>';
   else if (str.haveMine && str.rated)
     h += '<div class="xs faint" style="text-align:center;margin:-4px 0 12px">' +
-      'No strength bonus this time — nobody in the field was rated well above ' + esc(whoOr("the player")) +
-      '. Playing down never costs anything.</div>';
+      'No strength bonus this time — a bonus comes from beating or holding a stronger player. ' +
+      'Playing down never costs anything.</div>';
 
   /* --- reward block --- */
   const bandTxt = proc.band ? proc.band.label : null;
@@ -1142,20 +1157,25 @@ function renderSummaryTab(t){
   } else if (fin.kind === "money"){
     h += '<div class="reward good"><div class="lab">Final reward</div>' +
       '<div class="val">' + money(fin.money) + '</div>' +
-      '<div class="note">' + (fin.bonusPct
-        ? 'Base ' + money(fin.baseMoney) + ' + ' + fin.bonusPct + '% for ' + bandTxt.toLowerCase()
+      '<div class="note">' + (fin.processBonus
+        ? (fin.baseMoney > 0 ? 'Base ' + money(fin.baseMoney) + ' for ' + scoreFor + ' + ' : '')
+          + money(fin.processBonus) + ' effort bonus — ' + bandTxt.toLowerCase()
         : 'Base reward for ' + scoreFor) + '</div></div>';
   } else if (fin.kind === "waived"){
-    h += '<div class="reward waived"><div class="lab">Consequence</div>' +
-      '<div class="val">Waived</div>' +
+    h += '<div class="reward waived"><div class="lab">' +
+      (fin.money > 0 ? 'Effort bonus · consequence waived' : 'Consequence') + '</div>' +
+      '<div class="val">' + (fin.money > 0 ? money(fin.money) : 'Waived') + '</div>' +
       '<div class="note"><span class="strike">' + humanDays(fin.baseDays) + ' without games</span><br>' +
       'The result was ' + scoreFor + ', but the process score was ' + proc.total +
-      ' / 20. Excellent effort, responsibility and habits — the consequence is waived.</div></div>';
+      ' / 20. Excellent effort, responsibility and habits — the break is waived' +
+      (fin.money > 0 ? ' and the ' + money(fin.processBonus) + ' effort bonus is paid anyway.' : '.') +
+      '</div></div>';
   } else if (fin.kind === "hold"){
     h += '<div class="reward hold"><div class="lab">Break from games</div>' +
       '<div class="val">' + humanDays(fin.days) + '</div>' +
       '<div class="note">' + (fin.halved
-        ? '<span class="strike">' + humanDays(fin.baseDays) + '</span> — halved for ' + bandTxt.toLowerCase() + '.'
+        ? '<span class="strike">' + humanDays(fin.baseDays) + '</span> — halved for ' + bandTxt.toLowerCase() +
+          '. The effort credit went into shortening the break rather than into money.'
         : 'From the result table for ' + scoreFor + '.') +
       '<br>Games again from <b>' + endDate(t.date, fin.days) + '</b>.' +
       '<br>Time to reset and rebuild the habits, not a punishment for losing.</div></div>';
@@ -1238,8 +1258,10 @@ function summaryText(t, e){
     (proc.band ? "  (" + proc.band.label + ")" : ""));
   L.push("");
   if (fin.kind === "money" || fin.isSuper)
-    L.push("Reward: " + money(fin.money) + (fin.bonusPct ? "  (base " + money(fin.baseMoney) + " +" + fin.bonusPct + "%)" : ""));
-  else if (fin.kind === "waived") L.push("Consequence: WAIVED (was " + humanDays(fin.baseDays) + ") — excellent process");
+    L.push("Reward: " + money(fin.money) +
+      (fin.processBonus ? "  (base " + money(fin.baseMoney) + " + " + money(fin.processBonus) + " effort bonus)" : ""));
+  else if (fin.kind === "waived") L.push("Consequence: WAIVED (was " + humanDays(fin.baseDays) + ") — excellent process" +
+    (fin.money > 0 ? ", plus " + money(fin.money) + " effort bonus" : ""));
   else if (fin.kind === "hold") L.push("Break from games: " + humanDays(fin.days) +
     (fin.halved ? " (halved from " + humanDays(fin.baseDays) + ")" : "") + " — games again from " + endDate(t.date, fin.days));
   else L.push("No reward, no consequence.");
@@ -1460,12 +1482,20 @@ function renderMore(){
   h += '<h2 class="sec">Process modifier</h2><div class="card">' +
     PROCESS_BANDS.map(b => {
       const hi = b.min === 18 ? "" : "";
-      const eff = b.moneyMult !== 1
-        ? "+" + Math.round((b.moneyMult-1)*100) + "% reward · " + (b.consequence === "waive" ? "consequence waived" : "consequence halved")
+      const eff = b.flat
+        ? "+" + money(b.flat[6]) + " (" + money(b.flat[4]) + " over 4 rounds) · " +
+          (b.consequence === "waive" ? "consequence waived" : "consequence halved")
         : "normal result rule";
       return '<div class="kv"><span class="k">' + b.min + (b.min === 18 ? "–20" : "–" + (PROCESS_BANDS[PROCESS_BANDS.indexOf(b)-1].min - 1)) +
         ' · ' + b.label + '</span><span class="v xs">' + eff + '</span></div>';
-    }).join("") + '</div>';
+    }).join("") +
+    '<div class="xs faint mt10">The effort bonus is a <b>flat amount, not a percentage</b> — a percentage of a ' +
+      'small reward is worth nothing, and effort should be worth the same whatever the result was. ' +
+      'It is <b>never negative</b>: a weak process removes the bonus, it never takes money away.' +
+      '<br><br>Effort buys off a break <b>first</b>. If a break still remains after the modifier, the credit ' +
+      'went into shortening it rather than into cash — the app will not hand over money while also taking ' +
+      'chess away. Once there is no break, the bonus is paid, including on a hard-fought loss. ' +
+      'Nothing stacks on the ' + money(REWARD_TABLE[0].money) + ' perfect score.</div></div>';
 
   h += '<h2 class="sec">Opponent strength bonus</h2><div class="card">' +
     '<div class="small muted" style="line-height:1.6">Each round compares ' + esc(whosLow()) +
